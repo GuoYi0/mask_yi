@@ -1,0 +1,15 @@
+data/*
+.idea/*
+myTset.py
+tu.jpg
+tu2.jpg
+pre_trained_weights/*
+cocodata/*
+input/__pycache__/*
+*/__pycache__/*
+__pycache__/*
+checkpoints/*
+summary/*
+image_test/*
+lib/iou.py
+cocodata2
