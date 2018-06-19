@@ -89,6 +89,7 @@ class CocoDataset(object):
         instance_masks = []
         class_ids = []
         annotations = image_info["annotations"]
+        for ann in annotations
 
 
     def auto_download(self, dataDir, dataType, dataYear):

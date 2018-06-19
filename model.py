@@ -318,6 +318,12 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
 
     # 我们使用正则化坐标，所有框框的坐标值都在[0, 1]之间
     boxes = tf.clip_by_value(boxes, 0, 1)
+    boxes = tf.squeeze(boxes,0)
+    width = boxes[:,2] - boxes[:,0]
+    height = boxes[:,3] - boxes[:, 1]
+    index = (width > 0.00001) & (height > 0.00001)
+    boxes = tf.gather(boxes, index)
+    boxes = tf.expand_dims(boxes, 0)
     boxes = nms(boxes, scores, max_proposal, nms_thresh)
     return boxes
 
