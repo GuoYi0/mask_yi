@@ -579,8 +579,8 @@ def mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, num_class)
     with tf.control_dependencies([tf.Assert(tf.equal(tf.shape(y_true)[0],tf.shape(y_pred)[0]),
                                             data=["the shape must be same",tf.shape(y_true),tf.shape(y_pred)])]):
         loss = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=y_pred))
-
-    return tf.where(tf.size(positive_ix)>0,loss/tf.cast(tf.size(positive_ix), tf.float32),tf.constant(0.0))
+    print(positive_ix,"===========")
+    return tf.where(tf.size(positive_ix) > 0,loss/tf.cast(tf.size(positive_ix), tf.float32,name="cast_yi"),tf.constant(0.0))
 
 def detectionLayer(proposal, probs, bbox, image_shape):
     """
