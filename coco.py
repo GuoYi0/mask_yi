@@ -13,7 +13,7 @@ import argparse
 import sys
 from tensorflow.python import debug as tf_debug
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 COCO_MODEL_URL = "https://github.com/matterport/Mask_RCNN/releases/download/v2.0/mask_rcnn_coco.h5"
 
 weights_path = config.COCO_WEIGHTS_PATH
@@ -57,7 +57,7 @@ def main(_):
     total_loss = model_loss + tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
     # total_loss = model_loss +
     batch_norm_updates_op = tf.group(*tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-    with_clip = True
+    with_clip = False
     if with_clip:
         tvars = tf.trainable_variables()
         grads, norm = tf.clip_by_global_norm(tf.gradients(total_loss, tvars), 10.0)

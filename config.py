@@ -68,7 +68,7 @@ DETECTION_MIN_CONFIDENCE = 0.7  # 属于某一类比的置信度阈值
 DETECTION_MAX_INSTANCE = 100  # 每一张图片里面，最多检测出的instance个数
 DETECTION_NMS_THRESHHOLD = 0.3  # 同类别的检测的非极大值抑制阈值
 BACKBONE_STRIDES = []
-MAX_PROPOSAL_TO_DETECT = 5000
+MAX_PROPOSAL_TO_DETECT = 10
 
 if __name__ == '__main__':
     print(os.getcwd())

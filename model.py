@@ -482,13 +482,11 @@ def rpn_binary_loss_graph(rpn_binary_gt, rpn_binary_logits):
             data=["the length must be same", tf.shape(rpn_binary_logits)[0],tf.shape(rpn_binary_gt)[0]])]):
         # 取出有效的索引
         ix = tf.where(tf.not_equal(rpn_binary_gt, -1))[:,0]
-    if tf.size(ix) == 0:
-        return tf.constant(0.0)
 
     rpn_binary_gt = tf.gather(rpn_binary_gt, ix)
     rpn_binary_logits = tf.gather(rpn_binary_logits, ix)
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=rpn_binary_gt, logits=rpn_binary_logits)
-    return tf.reduce_mean(loss)
+    return tf.where(tf.size(ix)>0,tf.reduce_mean(loss),tf.constant(0.0))
 
 def rpn_bbox_loss_graph(rpn_bbox_gt, rpn_bbox_pred, rpn_binary_gt):
     """
@@ -507,13 +505,12 @@ def rpn_bbox_loss_graph(rpn_bbox_gt, rpn_bbox_pred, rpn_binary_gt):
             data=["in {}, line{},the length must be same".format(__file__, sys._getframe().f_lineno),
                   tf.shape(rpn_bbox_gt),tf.shape(rpn_bbox_pred)])]):
         positive_ix = tf.where(tf.equal(rpn_binary_gt, 1))[:, 0]
-    if tf.size(positive_ix) == 0:
-        return tf.constant(0.0)
+
     rpn_bbox_gt = tf.gather(rpn_bbox_gt, positive_ix)
     rpn_bbox_pred = tf.gather(rpn_bbox_pred, positive_ix)
     loss = tf.reduce_sum(smooth_l1_loss(rpn_bbox_gt - rpn_bbox_pred))
 
-    return loss/tf.cast(tf.size(positive_ix), tf.float32)
+    return tf.where(tf.size(positive_ix) > 0,loss/tf.cast(tf.size(positive_ix), tf.float32),tf.constant(0.0))
 
 
 def proposal_bbox_loss_graph(target_bbox,mrcnn_bbox,target_class_ids):
@@ -533,9 +530,6 @@ def proposal_bbox_loss_graph(target_bbox,mrcnn_bbox,target_class_ids):
                                       tf.equal(tf.shape(mrcnn_bbox)[0], tf.shape(target_class_ids)[0])),
                        data=["the shape must be same"]  )]):
         positive_ix = tf.cast(tf.where(target_class_ids > 0)[:, 0], tf.int32)
-    if tf.size(positive_ix) == 0:
-        return tf.constant(0.0)
-
 
     positive_class_ids = tf.cast(tf.gather(target_class_ids, positive_ix), tf.int32)  # 正例的具体id
     indice = tf.stack([positive_ix, positive_class_ids], axis=1)  # [在num_box中的索引编号，具体的id号]
@@ -545,7 +539,7 @@ def proposal_bbox_loss_graph(target_bbox,mrcnn_bbox,target_class_ids):
 
     loss = tf.reduce_sum(smooth_l1_loss(target_bbox - mrcnn_bbox))
 
-    return loss / tf.cast(tf.size(positive_ix), tf.float32)
+    return tf.where(tf.size(positive_ix) > 0,loss / tf.cast(tf.size(positive_ix), tf.float32),tf.constant(0.0))
 
 
 def proposal_class_loss_graph(target_ids, logits, num_class):
@@ -556,14 +550,11 @@ def proposal_class_loss_graph(target_ids, logits, num_class):
     with tf.control_dependencies([tf.Assert(tf.equal(tf.shape(target_ids)[0], tf.shape(logits)[0]),
                                             data=["The length must be same",tf.shape(target_ids)[0], tf.shape(logits)[0]])]):
         valid_ix = tf.where(tf.not_equal(target_ids, -1))[:, 0]
-    if tf.size(valid_ix) == 0:
-        return tf.constant(0.0)
-
     target_ids = tf.gather(target_ids, valid_ix)
     logits = tf.gather(logits, valid_ix) # shape(90, 81)
     # TODO problem
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=target_ids, logits=logits)
-    return tf.reduce_mean(loss), target_ids
+    return tf.where(tf.size(valid_ix)>0,tf.reduce_mean(loss), tf.constant(0.0)), target_ids
 
 
 def mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, num_class):
@@ -580,10 +571,7 @@ def mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, num_class)
 
     mrcnn_mask_logits = tf.transpose(mrcnn_mask_logits, [0, 3, 1, 2])  # [num_boxes, num_classes, 28, 28]
 
-    positive_ix =tf.cast(tf.where(target_class_ids > 0)[:, 0], tf.int32)  # 正例在num_box中的索引号
-    if tf.size(positive_ix) == 0:
-        return tf.constant(0.0)
-
+    positive_ix = tf.cast(tf.where(target_class_ids > 0)[:, 0], tf.int32)  # 正例在num_box中的索引号
     y_true = tf.gather(target_mask, positive_ix)  # [num_boxex, 28, 28]
     positive_class_ids = tf.cast(tf.gather(target_class_ids, positive_ix), tf.int32)  # 正例的具体id
     indice = tf.stack([positive_ix, positive_class_ids], axis=1)  # [在num_box中的索引号，类别号]
@@ -592,7 +580,7 @@ def mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, num_class)
                                             data=["the shape must be same",tf.shape(y_true),tf.shape(y_pred)])]):
         loss = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=y_pred))
 
-    return loss/tf.cast(tf.size(positive_ix), tf.float32)
+    return tf.where(tf.size(positive_ix)>0,loss/tf.cast(tf.size(positive_ix), tf.float32),tf.constant(0.0))
 
 def detectionLayer(proposal, probs, bbox, image_shape):
     """
