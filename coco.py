@@ -13,7 +13,7 @@ import argparse
 import sys
 from tensorflow.python import debug as tf_debug
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 COCO_MODEL_URL = "https://github.com/matterport/Mask_RCNN/releases/download/v2.0/mask_rcnn_coco.h5"
 
 weights_path = config.COCO_WEIGHTS_PATH

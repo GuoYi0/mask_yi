@@ -51,16 +51,16 @@ def apply_box_deltas(boxes, delta):
         delta_reshaped = tf.reshape(delta, [-1, 4])  # [num_box, 4]
     height = boxes_reshaped[:, 3] - boxes_reshaped[:, 1]
     width = boxes_reshaped[:, 2] - boxes_reshaped[:, 0]
-    center_x = (boxes_reshaped[:, 0] +boxes_reshaped[:, 2]) / 2
+    center_x = (boxes_reshaped[:, 0] + boxes_reshaped[:, 2]) / 2
     center_y = (boxes_reshaped[:, 3] + boxes_reshaped[:, 1]) / 2
 
     # 修正后的中心点xy坐标
-    pred_x = delta_reshaped[:,0] * width + center_x
-    pred_y = delta_reshaped[:,1] * height + center_y
+    pred_x = delta_reshaped[:, 0] * width + center_x
+    pred_y = delta_reshaped[:, 1] * height + center_y
 
     # 修正后的高度和宽度
-    pred_width = tf.exp(delta_reshaped[:,3]) * width
-    pred_height = tf.exp(delta_reshaped[:,2]) * height
+    pred_width = tf.exp(delta_reshaped[:, 3]) * width
+    pred_height = tf.exp(delta_reshaped[:, 2]) * height
 
     x1 = pred_x - pred_width/2
     y1 = pred_y - pred_height/2
@@ -79,10 +79,15 @@ def nms(boxes, scores, max_count, thresh):
     :param thresh:  iou阈值
     :return: [批数，个数，4]
     """
+    asserts = tf.Assert(tf.equal(tf.shape(boxes)[1],tf.shape(scores)[1]), [tf.shape(boxes), tf.shape(scores)])
+    with tf.control_dependencies([asserts]):
+        boxes = tf.identity(boxes)
     out = []
     batch_size = boxes.shape[0]
     for i in range(batch_size):
+
         selected_indices = tf.image.non_max_suppression(boxes[i], scores[i], max_count,thresh)
+
         out.append(tf.gather(boxes[i], selected_indices))
     return tf.stack(out, axis=0)
 
@@ -295,6 +300,9 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     # 虽然这种写法很蛋疼，但暂时也找不到更好的写法，待研究
     def unmatch_dim_gather(values, indice):
         batch_size = values.shape[0]  # 批数
+        asserts = tf.Assert(tf.equal(batch_size, 1), [tf.shape(values)])
+        with tf.control_dependencies([asserts]):
+            values = tf.identity(values)
         outputs = []
         for i in range(batch_size):
             out = tf.gather(values[i], indice[i])
@@ -321,9 +329,11 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     boxes = tf.squeeze(boxes,0)
     width = boxes[:,2] - boxes[:,0]
     height = boxes[:,3] - boxes[:, 1]
-    index = (width > 0.00001) & (height > 0.00001)
+    index = tf.where((width > 0.00001) & (height > 0.00001))[:,0]
     boxes = tf.gather(boxes, index)
     boxes = tf.expand_dims(boxes, 0)
+    scores = tf.gather(scores, index, axis=-1)
+
     boxes = nms(boxes, scores, max_proposal, nms_thresh)
     return boxes
 
