@@ -10,7 +10,7 @@ resnet152 = [[3, 256], [8, 512], [36, 1024], [3, 2048]]
 
 def rpn_graph(feature_map, anchor_per_location,anchor_stride, name=None):
     """
-    根据特征图建立RPN网络的计算图,对应网络的输出
+    根据特征图建立RPN网络的计算图,对应anchor的输出
     :param feature_map:  特征图，形状为[批，高，宽，通道数]
     :param anchor_per_location:  int，每个像素点产生多少个anchor
     :param anchor_stride: 一般取1，表示特征图上，每个点都产生anchor
@@ -40,27 +40,22 @@ def apply_box_deltas(boxes, delta):
     对boxes进行修正处理
     x坐标的回归 = (gt的x - anchor的x) / anchor的宽
     高度的回归 = log(gt的高/anchor的高)
-    :param boxes: [..，anchor数，4]， （x1, y1, x2, y2）
-    :param delta: [..，anchor数，4], (dx, dy, log(dh), log(dw))
+    :param boxes: [anchor数，4]， （x1, y1, x2, y2）
+    :param delta: [anchor数，4], (dx, dy, log(dh), log(dw))
     :return:
     """
-    shape = tf.shape(boxes)
-    with tf.control_dependencies([tf.Assert(tf.equal(shape[1],tf.shape(delta)[1]),
-                                            data=["shape must be same", shape, tf.shape(delta)])]):
-        boxes_reshaped = tf.reshape(boxes, [-1, 4])  # [num_box, 4]
-        delta_reshaped = tf.reshape(delta, [-1, 4])  # [num_box, 4]
-    height = boxes_reshaped[:, 3] - boxes_reshaped[:, 1]
-    width = boxes_reshaped[:, 2] - boxes_reshaped[:, 0]
-    center_x = (boxes_reshaped[:, 0] + boxes_reshaped[:, 2]) / 2
-    center_y = (boxes_reshaped[:, 3] + boxes_reshaped[:, 1]) / 2
+    height = boxes[:, 3] - boxes[:, 1]
+    width = boxes[:, 2] - boxes[:, 0]
+    center_x = (boxes[:, 0] + boxes[:, 2]) / 2
+    center_y = (boxes[:, 3] + boxes[:, 1]) / 2
 
     # 修正后的中心点xy坐标
-    pred_x = delta_reshaped[:, 0] * width + center_x
-    pred_y = delta_reshaped[:, 1] * height + center_y
+    pred_x = delta[:, 0] * width + center_x
+    pred_y = delta[:, 1] * height + center_y
 
     # 修正后的高度和宽度
-    pred_width = tf.exp(delta_reshaped[:, 3]) * width
-    pred_height = tf.exp(delta_reshaped[:, 2]) * height
+    pred_width = tf.exp(delta[:, 3]) * width
+    pred_height = tf.exp(delta[:, 2]) * height
 
     x1 = pred_x - pred_width/2
     y1 = pred_y - pred_height/2
@@ -69,27 +64,28 @@ def apply_box_deltas(boxes, delta):
     y2 = pred_y + pred_height/2
     # 拼接起来返回
     result = tf.stack([x1, y1, x2, y2], axis=1)
-    return tf.reshape(result,shape)
+    return result
 
 def nms(boxes, scores, max_count, thresh):
     """
-    :param boxes: [批数，个数，4]
-    :param scores: [批数， 个数]
+    :param boxes: [个数，4]
+    :param scores: [个数]
     :param max_count:  最多输出的盒子个数
     :param thresh:  iou阈值
-    :return: [批数，个数，4]
+    :return: [个数，4]
     """
-    asserts = tf.Assert(tf.equal(tf.shape(boxes)[1],tf.shape(scores)[1]), [tf.shape(boxes), tf.shape(scores)])
+
+    asserts = tf.Assert(tf.equal(tf.shape(boxes)[0],tf.shape(scores)[0]), [tf.shape(boxes), tf.shape(scores)])
     with tf.control_dependencies([asserts]):
         boxes = tf.identity(boxes)
-    out = []
-    batch_size = boxes.shape[0]
-    for i in range(batch_size):
+    def _nms():
+        selected_indices = tf.image.non_max_suppression(boxes, scores, max_count,thresh)
+        out = tf.gather(boxes, selected_indices)
+        return out
 
-        selected_indices = tf.image.non_max_suppression(boxes[i], scores[i], max_count,thresh)
+    final_out = tf.cond(tf.shape(boxes)[0]>0, _nms, lambda : boxes)
 
-        out.append(tf.gather(boxes[i], selected_indices))
-    return tf.stack(out, axis=0)
+    return final_out
 
 def overlaps_graph(boxes1, boxes2):
     """
@@ -134,12 +130,17 @@ def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
     其中T=config.TRAIN_ROIS_PER_IMAGE，即每张图片的训练proposal个数，
     """
 
-    # 保证至少有一个proposal
+    # 保证至少有一个proposal 至少有一个正例
     asserts = [tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals])]
     with tf.control_dependencies(asserts):
         proposals = tf.identity(proposals)
 
+
     non_crowd_ix = tf.where(gt_class_ids > 0)[:, 0]
+    # 至少有一个正例
+    asserts2 = [tf.Assert(tf.greater(tf.shape(non_crowd_ix)[0], 0), [non_crowd_ix])]
+    with tf.control_dependencies(asserts2):
+        gt_boxes = tf.identity(gt_boxes)
 
     # 把只有一个实例的框框、对应的id、mask选出来
     gt_boxes = tf.gather(gt_boxes, non_crowd_ix)
@@ -164,72 +165,87 @@ def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
         negative_indices = tf.where(roi_iou_max < config.neg_anchor_thresh)[:, 0]
 
     # 定义正负例的个数
-
     positive_count = tf.minimum(tf.cast(config.TRAIN_ROIS_PER_IMAGE * config.ROI_POSITIVE_RATIO, tf.int32),
                                 tf.size(positive_indices))
-    r = 1.0/config.ROI_POSITIVE_RATIO
 
-    negative_count = tf.cast((r-1.0)*tf.cast(positive_count,tf.float32), tf.int32)
-    negative_count = tf.minimum(negative_count, tf.size(negative_indices))
+    if positive_indices.shape[0] > 0:  # 如果正例个数非空，
+        r = 1.0/config.ROI_POSITIVE_RATIO
+        negative_count = tf.cast((r-1.0)*tf.cast(positive_count,tf.float32), tf.int32)
+        negative_count = tf.minimum(negative_count, tf.size(negative_indices))
 
-    # 随意选择正负样本
-    positive_indices = tf.random_shuffle(positive_indices)[:positive_count]
-    negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
 
-    # 取出正负例的proposal，只选择这些去训练
-    positive_rois = tf.gather(proposals, positive_indices)
-    negative_rois = tf.gather(proposals, negative_indices)
+        # 随意选择正负样本
+        positive_indices = tf.random_shuffle(positive_indices)[:positive_count]
+        negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
 
-    # 取出 proposal对应的gt_boxes和相应的class_ids,mask
-    positive_overlaps = tf.gather(overlaps, positive_indices)
-    gt_indices = tf.argmax(positive_overlaps, axis=1)  # 其长度等于正例个数
-    roi_gt_boxes = tf.gather(gt_boxes, gt_indices)
-    roi_class_ids = tf.gather(gt_class_ids, gt_indices)
-    roi_mask = tf.gather(gt_masks, gt_indices, axis=0)
+        # 取出正负例的proposal，只选择这些去训练
+        positive_rois = tf.gather(proposals, positive_indices)
+        negative_rois = tf.gather(proposals, negative_indices)
 
-    gt_deltas = box_deltas(positive_rois, roi_gt_boxes)
-    gt_deltas /= config.RPN_BBOX_STD_DEV
+        # 取出 proposal对应的gt_boxes和相应的class_ids,mask
 
-    # 把mask调整为[正例个数, 高，宽， 1]
-    roi_mask = tf.expand_dims(roi_mask, -1)
+        positive_overlaps = tf.gather(overlaps, positive_indices)
+        gt_indices = tf.argmax(positive_overlaps, axis=1)  # 其长度等于正例个数
+        roi_gt_boxes = tf.gather(gt_boxes, gt_indices)
+        roi_class_ids = tf.gather(gt_class_ids, gt_indices)
+        roi_mask = tf.gather(gt_masks, gt_indices, axis=0)
 
-    # boxes的长度是所需要的正例的训练个数
-    boxes = positive_rois
-    if config.USE_MINI_MASK:
-        # MINI mask的高宽，对应GT bounding box的高宽。
-        # 下面代码的作用，是将roi相对于原始图片的坐标，转换为相对于gt的坐标
-        x1, y1, x2, y2 = tf.split(positive_rois, num_or_size_splits=4, axis=1)
-        gt_x1, gt_y1, gt_x2, gt_y2 = tf.split(roi_gt_boxes, num_or_size_splits=4, axis=1)
-        gt_h = gt_y2 - gt_y1
-        gt_w = gt_x2 - gt_x1
-        y1 = (y1 - gt_y1) / gt_h
-        x1 = (x1 - gt_x1) / gt_w
-        y2 = (y2 - gt_y1) / gt_h
-        x2 = (x2 - gt_x1) / gt_w
-        boxes = tf.concat([y1, x1, y2, x2], 1)
-    # 在proposal的地方裁剪mask，然后resize成[28, 28]的大小
-    # 蛋疼的是，在tensorflow中，图片左上角为原点，水平向右是x轴，竖直向下是y轴
-    # 对于这个api，boxes必须是规范化坐标，且为[y1, x1, y2, x2]，就是说，第一个参数衡量竖直向下的偏移量
-    # 所以就有了下面这两句话
+        gt_deltas = box_deltas(positive_rois, roi_gt_boxes)
+        gt_deltas /= config.RPN_BBOX_STD_DEV
+
+        # 把mask调整为[正例个数, 高，宽， 1]
+        roi_mask = tf.expand_dims(roi_mask, -1)
+
+        # boxes的长度是所需要的正例的训练个数
+        boxes = positive_rois
+        if config.USE_MINI_MASK:
+            # MINI mask的高宽，对应GT bounding box的高宽。
+            # 下面代码的作用，是将roi相对于原始图片的坐标，转换为相对于gt的坐标
+            x1, y1, x2, y2 = tf.split(positive_rois, num_or_size_splits=4, axis=1)
+            gt_x1, gt_y1, gt_x2, gt_y2 = tf.split(roi_gt_boxes, num_or_size_splits=4, axis=1)
+            gt_h = gt_y2 - gt_y1
+            gt_w = gt_x2 - gt_x1
+            y1 = (y1 - gt_y1) / gt_h
+            x1 = (x1 - gt_x1) / gt_w
+            y2 = (y2 - gt_y1) / gt_h
+            x2 = (x2 - gt_x1) / gt_w
+            boxes = tf.concat([y1, x1, y2, x2], 1)
+        # 在proposal的地方裁剪mask，然后resize成[28, 28]的大小
+        # 蛋疼的是，在tensorflow中，图片左上角为原点，水平向右是x轴，竖直向下是y轴
+        # 对于这个api，boxes必须是规范化坐标，且为[y1, x1, y2, x2]，就是说，第一个参数衡量竖直向下的偏移量
+        # 所以就有了下面这两句话
+        else:
+            x1, y1, x2, y2 = tf.split(boxes, num_or_size_splits=4, axis=1)
+            boxes = tf.concat([y1,x1,y2,x2], axis=1)
+
+        # 把proposal地方的mask截取出来
+        masks = tf.image.crop_and_resize(
+            image=tf.cast(roi_mask, tf.float32), boxes=boxes,
+            box_ind=tf.range(0, tf.shape(roi_mask)[0]), crop_size=config.MASK_SHAPE)
+        # 把mask的shape还原为[正例个数, 高，宽]
+        masks = tf.squeeze(masks, axis=3)
+        # 在resize过程中，可能导致非0和1的float数出现，这里二值化为0和1
+        masks = tf.round(masks)
+
+        # # 把正例roi和负例roi拼接起来，并对多余的进行零填充
+        proposals = tf.concat([positive_rois, negative_rois], axis=0)
+        b = tf.shape(negative_rois)[0]  # 负的
+        roi_gt_class_ids = tf.pad(roi_class_ids, [(0, b)])  # 负例的pad为0
+        gt_deltas = tf.pad(gt_deltas, [(0, b), (0, 0)])
+        masks = tf.pad(masks, [(0, b), (0, 0), (0, 0)])
     else:
-        x1, y1, x2, y2 = tf.split(boxes, num_or_size_splits=4, axis=1)
-        boxes = tf.concat([y1,x1,y2,x2], axis=1)
+        negative_count = tf.minimum(10, tf.size(negative_indices))
+        negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
+        proposals = tf.gather(proposals, negative_indices)
 
-    # 把proposal地方的mask截取出来
-    masks = tf.image.crop_and_resize(
-        image=tf.cast(roi_mask, tf.float32), boxes=boxes,
-        box_ind=tf.range(0, tf.shape(roi_mask)[0]), crop_size=config.MASK_SHAPE)
-    # 把mask的shape还原为[正例个数, 高，宽]
-    masks = tf.squeeze(masks, axis=3)
-    # 在resize过程中，可能导致非0和1的float数出现，这里二值化为0和1
-    masks = tf.round(masks)
+        b = negative_count  # 负的
+        roi_gt_class_ids = tf.convert_to_tensor()
+        roi_gt_class_ids = tf.pad(roi_class_ids, [(0, b)])  # 负例的pad为0
+        gt_deltas = tf.pad(gt_deltas, [(0, b), (0, 0)])
+        masks = tf.pad(masks, [(0, b), (0, 0), (0, 0)])
 
-    # # 把正例roi和负例roi拼接起来，并对多余的进行零填充
-    proposals = tf.concat([positive_rois, negative_rois], axis=0)
-    b = tf.shape(negative_rois)[0]  # 负的
-    roi_gt_class_ids = tf.pad(roi_class_ids, [(0, b)])  # 负例的pad为0
-    gt_deltas = tf.pad(gt_deltas, [(0, b), (0, 0)])
-    masks = tf.pad(masks, [(0, b), (0, 0), (0, 0)])
+
+
     ###################################以下代码是为了多批数训练而写的，每次训练一批时不用填充##################
     # a = tf.maximum(config.TRAIN_ROIS_PER_IMAGE - tf.shape(proposals)[0], 0)  # 不够凑足一个TRAIN_ROIS_PER_IMAGE的
     # proposals = tf.pad(proposals, [(0, a), (0, 0)])
@@ -282,59 +298,61 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     :param inputs: 包含三个元素的列表， 依次是rpn_binary_class, rpn_bbox, anchors
     :param max_proposal:
     :param nms_thresh:
-    :return:经过非极大值抑制后的proposal，shape是[批数，proposal个数，(x1, y1, x2, y2)],正则化坐标
+    :return:经过非极大值抑制后的proposal，shape是[proposal个数，(x1, y1, x2, y2)],正则化坐标
     """
     # rpn_binary_class的形状是[批数，anchor数，2]，只取正例的分数
-    scores = inputs[0][:, :, 1]
+    scores = tf.squeeze(inputs[0][:, :, 1],0)  # [个数]
     # rpn_bbox的形状是[批数，anchor数，4]
     deltas = inputs[1]
-    deltas = deltas * tf.reshape(config.RPN_BBOX_STD_DEV, [1, 1, 4])
-    anchors = inputs[2]  # 取出anchors
+    deltas = tf.squeeze(deltas * tf.reshape(config.RPN_BBOX_STD_DEV, [1, 1, 4]),0) # [个数，4]
+    anchors = tf.squeeze(inputs[2], 0)  # 取出anchors [ 个数，(x1, y1, x2, y2)],normalized坐标
+
+
 
     # 取anchor数和6000的较小值，只保留这些proposal
     pre_nms_limit = tf.minimum(config.MAX_PROPOSAL_TO_DETECT, tf.shape(anchors)[1])
     # 按照最后一个维度，取出分数最高的前k个的索引,以列表形式返回,这里，ix是一个二维列表
-    ix = tf.nn.top_k(scores, pre_nms_limit, sorted=True).indices  # (批数，选中的编号)
-
+    ix = tf.nn.top_k(scores, pre_nms_limit, sorted=True).indices  # [pre_nms_limit]
     # scores,deltas和anchors的rank都是3， 需要定义一个函数，来对anchor进行选取
     # 虽然这种写法很蛋疼，但暂时也找不到更好的写法，待研究
-    def unmatch_dim_gather(values, indice):
-        batch_size = values.shape[0]  # 批数
-        asserts = tf.Assert(tf.equal(batch_size, 1), [tf.shape(values)])
-        with tf.control_dependencies([asserts]):
-            values = tf.identity(values)
-        outputs = []
-        for i in range(batch_size):
-            out = tf.gather(values[i], indice[i])
-            # if not isinstance(out, (tuple, list)):
-            #     out = [out]
-            outputs.append(out)
-        outputs = tf.convert_to_tensor(outputs)
-        return outputs
+    # def unmatch_dim_gather(values, indice):
+    #     batch_size = values.shape[0]  # 批数
+    #     asserts = tf.Assert(tf.equal(batch_size, 1), [tf.shape(values)])
+    #     with tf.control_dependencies([asserts]):
+    #         values = tf.identity(values)
+    #     outputs = []
+    #     for i in range(batch_size):
+    #         out = tf.gather(values[i], indice[i])
+    #         # if not isinstance(out, (tuple, list)):
+    #         #     out = [out]
+    #         outputs.append(out)
+    #     outputs = tf.convert_to_tensor(outputs)
+    #     return outputs
+    #
+    # scores = tf.expand_dims(scores, dim=-1)
+    #
+    # scores = unmatch_dim_gather(scores, ix)   # (批数，anchor数，1)
+    # scores = tf.squeeze(scores, -1)
+    # deltas = unmatch_dim_gather(deltas, ix) # (批数，anchor数，4)
+    # pre_nms_anchors = unmatch_dim_gather(anchors, ix)  # (批数，anchor数，4)
+    scores = tf.gather(scores, ix)  # (个数)
+    deltas = tf.gather(deltas,ix)  # (个数，4)
+    pre_nms_anchors=tf.gather(anchors, ix)  # [个数，(x1, y1, x2, y2)]
 
-    scores = tf.expand_dims(scores, dim=-1)
-
-    scores = unmatch_dim_gather(scores, ix)   # (批数，anchor数，1)
-    scores = tf.squeeze(scores, -1)
-    deltas = unmatch_dim_gather(deltas, ix) # (批数，anchor数，4)
-    pre_nms_anchors = unmatch_dim_gather(anchors, ix)  # (批数，anchor数，4)
 
 
-
-    # 修正坐标
+    # 修正坐标，修正以后，可能会出现x2<x1的情况
     boxes = apply_box_deltas(pre_nms_anchors, deltas)
 
     # 我们使用正则化坐标，所有框框的坐标值都在[0, 1]之间
     boxes = tf.clip_by_value(boxes, 0, 1)
-    boxes = tf.squeeze(boxes,0)
     width = boxes[:,2] - boxes[:,0]
     height = boxes[:,3] - boxes[:, 1]
     index = tf.where((width > 0.00001) & (height > 0.00001))[:,0]
     boxes = tf.gather(boxes, index)
-    boxes = tf.expand_dims(boxes, 0)
-    scores = tf.gather(scores, index, axis=-1)
-
-    boxes = nms(boxes, scores, max_proposal, nms_thresh)
+    scores = tf.gather(scores, index)
+    # 这里的boxes有可能是空
+    boxes = nms(boxes, scores, max_proposal, nms_thresh)  # [个数，4]
     return boxes
 
 def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size, num_classes, name=None):
@@ -780,7 +798,7 @@ class MASK_RCNN(object):
         if self.anchors is None:
             self.get_anchors(config.batch_size, resolution, config.input_shape, config.smallest_anchor_size)
 
-        # 生成经过非极大值抑制后的proposal, 形状是 [批数，个数，4]
+        # 生成经过非极大值抑制后的proposal, 形状是 [个数，4]
         proposal = proposalLayer(inputs=[rpn_binary_probs, rpn_bbox_pred, self.anchors],
                                  max_proposal=num_proposal,nms_thresh=config.RPN_NMS_THRESHOLD, name="ROI")
 
@@ -799,23 +817,16 @@ class MASK_RCNN(object):
         else:
             # 调用detection_targets函数，返回proposal,以及相应的类别、回归、masks
             # 因为批数不好处理，故只能蛋疼地分成一批一批地处理
-            rois_list, target_class_ids_list, target_bbox_list, target_mask_list = [], [], [], []
-            for i in range(batch_size):
+
                 # roi_gt_class_ids[M], 反映proposal的分类
                 # gt_deltas[M, (dx, dy, log(h), log(w))]
                 # 反映proposal相对于gt的回归
                 # masks[M, 高，宽]
                 # [N, (x1, y1, x2, y2)]; [N];  [N, 4]; [N, 高，宽]
-                rois, target_class_ids, target_bbox, target_mask = detection_targets(
-                    proposal[i], gt_class_ids=class_ids[i],gt_boxes=gt_boxes[i],gt_masks=input_gt_mask[i])
-                rois_list.append(rois)
-                target_bbox_list.append(target_bbox)
-                target_class_ids_list.append(target_class_ids)
-                target_mask_list.append(target_mask)
-            rois = tf.convert_to_tensor(rois_list)
-            target_bbox = tf.convert_to_tensor(target_bbox_list)
-            target_class_ids = tf.convert_to_tensor(target_class_ids_list)
-            target_mask = tf.convert_to_tensor(target_mask_list)  # [batch, N, 高，宽]
+            rois, target_class_ids, target_bbox, target_mask = detection_targets(
+                proposal, gt_class_ids=class_ids[0],gt_boxes=gt_boxes[0],gt_masks=input_gt_mask[0])
+
+
 
 
             # mrcnn_class_logits, mrcnn_class_probs的shape都是[num_boxex, num_classes]

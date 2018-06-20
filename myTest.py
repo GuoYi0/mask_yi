@@ -197,11 +197,43 @@ import os
 # b = np.round(segmentation_mask).astype(np.bool)
 # print(b)
 import cv2
-mask = np.zeros((6, 5), dtype=np.bool)
-gg = mask.astype(np.float32)
-gg[0:3, 3:4] = 2.0
-print(gg)
-index = np.argwhere(gg>0)
-print("=========")
-print(index)
-print(min(1,2,3))
+# mask = np.zeros((6, 5), dtype=np.bool)
+# gg = mask.astype(np.float32)
+# gg[0:3, 3:4] = 2.0
+# print(gg)
+# index = np.argwhere(gg>0)
+# print("=========")
+# print(index)
+# print(min(1,2,3))
+
+# def return_zero():
+#     return 1
+#
+# def add():
+#     return 2
+#
+# a = tf.constant(2)
+#
+# b = tf.cond(a>0, return_zero, add)
+#
+# with tf.Session() as sess:
+#     print(sess.run(b))
+
+# a = np.array([[3,2,4,1]])
+# b = tf.nn.top_k(a, 2, sorted=True).indices
+# b=b[0]
+# print(a)
+# print("======")
+# with tf.Session() as sess:
+#     print(sess.run(b))
+
+
+
+a = tf.constant([3,8])
+b = tf.where(a>10)[:,0]
+gg = tf.gather(a, b)
+positive_indices = tf.random_shuffle(b)[:0]
+
+with tf.Session() as sess:
+    print(sess.run(positive_indices))
+

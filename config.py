@@ -6,7 +6,7 @@ import os
 
 # common
 dataDir = '.'
-train_type = 'train2017'
+train_type = 'val2017'
 trainImage_path = '{}/cocodata2/images'.format(dataDir)
 train_annFile = '{}/cocodata2/annotations/instances_{}.json'.format(dataDir,train_type)
 checkpoint_path = 'checkpoints'
@@ -36,10 +36,11 @@ batch_anchor_num = 128  # 每轮正值和负值总数
 batch_size = 1
 anchor_ratios = (0.5,1.0, 2.0)
 anchor_scales = [64, 128, 256]
-anchor_per_location = len(anchor_ratios)
+anchor_per_location = 3
 allowed_border = 4  # 只有在图片里面的anchor才进行训练，但由于图片可能有填充， 允许超出边界的像素个数
 # 非极大值抑制以后，保留的roi的个数 (training and inference)
-POST_NMS_ROIS_TRAINING = 2000
+POST_NMS_ROIS_TRAINING = 2000  # 选出分数最高的这些anchor来生成的proposal，非极大值抑制之前
+MAX_PROPOSAL_TO_DETECT = 1000  # 要检测的正例proposal，一般小于上面的数POST_NMS_ROIS_TRAINING
 POST_NMS_ROIS_INFERENCE = 1000
 
 RPN_BBOX_STD_DEV = np.array([0.1, 0.1, 0.2, 0.2], dtype=np.float32)
@@ -68,7 +69,7 @@ DETECTION_MIN_CONFIDENCE = 0.7  # 属于某一类比的置信度阈值
 DETECTION_MAX_INSTANCE = 100  # 每一张图片里面，最多检测出的instance个数
 DETECTION_NMS_THRESHHOLD = 0.3  # 同类别的检测的非极大值抑制阈值
 BACKBONE_STRIDES = []
-MAX_PROPOSAL_TO_DETECT = 5000
+
 
 if __name__ == '__main__':
     print(os.getcwd())

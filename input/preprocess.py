@@ -74,7 +74,7 @@ def data_augmentation(image, raw_size, bboxs, categories, segmentations):
     return image, bboxs, gt_class, segmentations
 
 # image, bboxs, segmentations, categories
-def crop_area(im, bboxs, masks, tags, crop_background=False, max_tries=50):
+def crop_area(im, bboxs, masks, tags, crop_background=True, max_tries=50):
     '''
     make random crop from the input image
     :param im: [高，宽，通道数] 已经去均值了
@@ -134,7 +134,7 @@ def crop_area(im, bboxs, masks, tags, crop_background=False, max_tries=50):
             selected_polys = []
 
         if len(selected_polys) == 0:
-            if crop_background:
+            if crop_background:  # 裁剪到背景了，原图片返回
                 return im, bboxs, masks, tags
             else:
                 continue
