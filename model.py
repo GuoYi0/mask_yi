@@ -417,11 +417,14 @@ def pyramidROIAlign(pool_size, rois, image_shape, feature_maps):
             x1, y1, x2, y2 = tf.split(level_boxes, 4, 1)
             temp = tf.concat([y1, x1, y2, x2], axis=1)
             # temp = tf.stack()
+            def list_append():
+                pooled.append(tf.image.crop_and_resize(
+                    feature_maps[i], temp, batch_indices, pool_size, method='bilinear'))
+            tf.cond(temp.shape[0] > 0, list_append)
 
             # roi是有零填充的，零填充以后，所截取的feature map，还怎么放大到7*7？？？
             # tf.image.crop_and_resize返回的shape是[所截取图片张数，高，宽，通道数]
-            pooled.append(tf.image.crop_and_resize(
-                feature_maps[i], temp, batch_indices, pool_size, method='bilinear'))
+
     # 合并成tensor，shape是[num_pic, height, width, channels]
     pooled = tf.concat(pooled, axis=0)
 
@@ -552,7 +555,7 @@ def proposal_class_loss_graph(target_ids, logits, num_class):
         valid_ix = tf.where(tf.not_equal(target_ids, -1))[:, 0]
     target_ids = tf.gather(target_ids, valid_ix)
     logits = tf.gather(logits, valid_ix) # shape(90, 81)
-    # TODO problem
+
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=target_ids, logits=logits)
     return tf.where(tf.size(valid_ix)>0,tf.reduce_mean(loss), tf.constant(0.0)), target_ids
 
@@ -572,15 +575,25 @@ def mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, num_class)
     mrcnn_mask_logits = tf.transpose(mrcnn_mask_logits, [0, 3, 1, 2])  # [num_boxes, num_classes, 28, 28]
 
     positive_ix = tf.cast(tf.where(target_class_ids > 0)[:, 0], tf.int32)  # 正例在num_box中的索引号
-    y_true = tf.gather(target_mask, positive_ix)  # [num_boxex, 28, 28]
-    positive_class_ids = tf.cast(tf.gather(target_class_ids, positive_ix), tf.int32)  # 正例的具体id
-    indice = tf.stack([positive_ix, positive_class_ids], axis=1)  # [在num_box中的索引号，类别号]
-    y_pred = tf.gather_nd(mrcnn_mask_logits, indice)  # [num_boxex, 28，28]
-    with tf.control_dependencies([tf.Assert(tf.equal(tf.shape(y_true)[0],tf.shape(y_pred)[0]),
-                                            data=["the shape must be same",tf.shape(y_true),tf.shape(y_pred)])]):
-        loss = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=y_pred))
+
+    def return_zero():
+        return tf.constant(0.0)
+
+    def return_loss():
+
+        y_true = tf.gather(target_mask, positive_ix)  # [num_boxex, 28, 28]
+        positive_class_ids = tf.cast(tf.gather(target_class_ids, positive_ix), tf.int32)  # 正例的具体id
+        indice = tf.stack([positive_ix, positive_class_ids], axis=1)  # [在num_box中的索引号，类别号]
+        y_pred = tf.gather_nd(mrcnn_mask_logits, indice)  # [num_boxex, 28，28]
+        with tf.control_dependencies([tf.Assert(tf.equal(tf.shape(y_true)[0],tf.shape(y_pred)[0]),
+                                                data=["the shape must be same",tf.shape(y_true),tf.shape(y_pred)])]):
+            loss = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=y_pred))
+        loss = loss/tf.cast(tf.size(positive_ix), tf.float32,name="cast_yi")
+        return loss
+
+    final_loss = tf.cond(tf.size(positive_ix) > 0, return_loss, return_zero)
     # TODO here, tf.size(positive_ix) equals zero, but not return 0.0,, don't know why
-    return tf.where(tf.size(positive_ix) > 0,loss/tf.cast(tf.size(positive_ix), tf.float32,name="cast_yi"),tf.constant(0.0))
+    return final_loss
 
 def detectionLayer(proposal, probs, bbox, image_shape):
     """
