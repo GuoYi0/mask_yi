@@ -30,8 +30,8 @@ pixel_average = [102.9801, 115.9465, 122.7717]
 feat_strides = np.array([128, 64, 32, 16, 8])
 resolution = np.array([8, 16, 32, 64, 128])
 positive_ratio = 0.25
-posi_anchor_thresh = 0.5  # anchor 大于为正值
-neg_anchor_thresh = 0.1  # anchor 小于为负值
+posi_anchor_thresh = 0.7  # anchor 大于为正值
+neg_anchor_thresh = 0.3  # anchor 小于为负值
 batch_anchor_num = 128  # 每轮正值和负值总数
 batch_size = 1
 anchor_ratios = (0.5,1.0, 2.0)
@@ -52,7 +52,7 @@ IMAGE_SHAPE = input_shape + (3,)  # 输入的图片的裁剪大小,通道是3
 
 # 喂给网络的roi个数，原文里面是512，并保证正负样本比例1:3。但是有时候没有足够的正样本数来保证，故暂且取200
 # 可以把proposal的nms的阈值调高，使得这个数可以适当调高
-TRAIN_ROIS_PER_IMAGE = 200
+TRAIN_ROIS_PER_IMAGE = 2000
 
 # 每张图片训练多少个anchors
 RPN_TRAIN_ANCHORS_PER_IMAGE = 256
@@ -65,7 +65,7 @@ POOL_SIZE = (7, 7)  # ROI Pooling层的大小，一般是7*7
 NUM_CLASSES = 90 + 1  # 图片分为多少个类别。80类正例加一类背景。一般来说，我建议先分为object/non-object，
 # 然后对于object再分为80类，而不是全部混在一起进行分类
 
-DETECTION_MIN_CONFIDENCE = 0.7  # 属于某一类比的置信度阈值
+DETECTION_MIN_CONFIDENCE = 0.7  # 属于某一类别的置信度阈值
 DETECTION_MAX_INSTANCE = 100  # 每一张图片里面，最多检测出的instance个数
 DETECTION_NMS_THRESHHOLD = 0.3  # 同类别的检测的非极大值抑制阈值
 BACKBONE_STRIDES = []

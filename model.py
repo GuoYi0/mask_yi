@@ -131,10 +131,12 @@ def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
     """
 
     # 保证至少有一个proposal 至少有一个正例
-    asserts = [tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals])]
+    asserts = [tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [tf.shape(proposals)])]
     with tf.control_dependencies(asserts):
         proposals = tf.identity(proposals)
 
+    # if proposals.shape[0] == 0:
+    #     raise
 
     non_crowd_ix = tf.where(gt_class_ids > 0)[:, 0]
     # 至少有一个正例
@@ -237,9 +239,17 @@ def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
         negative_count = tf.minimum(10, tf.size(negative_indices))
         negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
         proposals = tf.gather(proposals, negative_indices)
-        roi_gt_class_ids = tf.constant(0,dtype=tf.int32, shape=(10,))
-        gt_deltas = tf.constant(0.0, dtype=tf.float32, shape=(10, 4))
-        masks = tf.constant(0.0,dtype=tf.float32,shape=(10,)+ config.MASK_SHAPE )
+        # 为什么要写的这么蛋疼？因为我也不会生成一个不定长度的张量啊啊
+        empty = tf.cast([], tf.int32)
+        roi_gt_class_ids = tf.gather(gt_class_ids, empty)
+        roi_gt_class_ids = tf.pad(roi_gt_class_ids, [(0, negative_count)])
+
+        gt_deltas = tf.gather(proposals, empty)
+        gt_deltas = tf.pad(gt_deltas, [(0, negative_count), (0, 0)])
+
+        #
+        masks = tf.constant(0.0,dtype=tf.float32,shape=(0,)+ config.MASK_SHAPE)
+        masks = tf.pad(masks, [(0, negative_count), (0, 0), (0, 0)])
 
     ###################################以下代码是为了多批数训练而写的，每次训练一批时不用填充##################
     # a = tf.maximum(config.TRAIN_ROIS_PER_IMAGE - tf.shape(proposals)[0], 0)  # 不够凑足一个TRAIN_ROIS_PER_IMAGE的
@@ -343,7 +353,7 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     boxes = tf.clip_by_value(boxes, 0, 1)
     width = boxes[:,2] - boxes[:,0]
     height = boxes[:,3] - boxes[:, 1]
-    index = tf.where(tf.logical_and((width > 0.00001), (height > 0.00001)))[:,0]
+    index = tf.where(tf.logical_and((width > 0.0000001), (height > 0.0000001)))[:,0]
     boxes = tf.gather(boxes, index)
     scores = tf.gather(scores, index)
     # 这里的boxes有可能是空
@@ -372,10 +382,11 @@ def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size,
 
     # 这里其实就是全连接,并且批数由num_boxes代替了
     x = conv2d(inputs=x,out_channal=1024, kernel_size=pool_size[0],strides=pool_size[0], use_bias=True, name=name+"_class_conv1")
+    print("===================",x)
 
-    asserts = tf.Assert(tf.shape(x)[1] == 1, [tf.shape(x)])
-    with tf.control_dependencies([asserts]):
-        x = tf.identity(x)
+    # asserts = tf.Assert(tf.shape(x)[1] == 1, ["the shape of x is ",tf.shape(x)])
+    # with tf.control_dependencies([asserts]):
+    #     x = tf.identity(x)
 
     # 这里是全连接，就不来batch_norm了
     x = tf.nn.relu(x)
@@ -418,33 +429,32 @@ def pyramidROIAlign(pool_size, rois, image_shape, feature_maps):
     roi_level = tf.log(h*w*image_area/(224.0*224.0))/tf.log(2.0)/2  # shape [num, 1]
     roi_level = tf.minimum(5, tf.maximum(2, 4+ tf.cast(tf.round(roi_level), tf.int32)))
     roi_level = tf.squeeze(roi_level, -1)  # shape [num]
+    roi_level = tf.expand_dims(roi_level, 0)
 
     # 对每一个层级进行遍历
     pooled, box_to_level = [], []
     for i, level in enumerate(range(2, 6)):
 
-        ix = tf.where(tf.equal(roi_level, level))[:,0]
+        ix = tf.where(tf.equal(roi_level, level))
         num = ix.shape[0]
         if num == 0:
             continue
-        level_boxes = tf.gather(rois, ix)
-
+        level_boxes = tf.gather(rois, ix[:,1])
+        box_indices = tf.cast(ix[:, 0], tf.int32)
         box_to_level.append(ix)  # 记录该层级所拥有的proposal坐标
 
         # 用approximate joint training的法则，把proposal当作常数处理，对梯度不贡献
         level_boxes = tf.stop_gradient(level_boxes)
-
-
-
         x1, y1, x2, y2 = tf.split(level_boxes, 4, 1)
         temp = tf.concat([y1, x1, y2, x2], axis=1)
         # temp = tf.stack()
         # def list_append():
         # 这里需要定义一个长度为 num，全是零的以为数组，不知道怎么搞
-        box_inds = tf.zeros(shape=(10000,),dtype=tf.int32)
+
+        # box_inds = tf.zeros(shape=(10000,),dtype=tf.int32)
         # box_ind = tf.constant(0, dtype=tf.int32, shape=(num,))
         pooled.append(tf.image.crop_and_resize(
-            feature_maps[i], temp, box_inds, pool_size, method='bilinear'))
+            feature_maps[i], temp, box_indices, pool_size, method='bilinear'))
         # tf.cond(temp.shape[0] > 0, list_append)
 
             # roi是有零填充的，零填充以后，所截取的feature map，还怎么放大到7*7？？？

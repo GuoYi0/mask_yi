@@ -81,8 +81,11 @@ def main(_):
 
     next_batch = producer().make_one_shot_iterator().get_next()
 
+    config2 = tf.ConfigProto(allow_soft_placement=True)
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
+    config2.gpu_options.allow_growth = True
 
-    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
+    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True,gpu_options = gpu_options)) as sess:
 
         # 如果是从原来的模型中接着训练，就不需要sess.run(tf.global_variables_initializer())
         if config.restore:
@@ -107,6 +110,7 @@ def main(_):
             sess = tf_debug.TensorBoardDebugWrapperSession(sess, FLAGS.tensorboard_debug_address)
 
         start = time.time()
+        num_exception = 0
         for step in range(config.max_steps):
             # img_name   image,      gt_box,    gt_class,  mask, anchor_labels, anchor_deltas
             # image,gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas
@@ -120,6 +124,10 @@ def main(_):
                                             input_gt_mask: segmentation_mask,
                                             rpn_binary_gt: anchor_labels,
                                             anchor_deltas: anchor_deltas_in})
+
+                print("yichang")
+                num_exception += 1
+                continue
             if np.isnan(tl):
                 print('Loss diverged, stop training')
                 break
@@ -127,6 +135,8 @@ def main(_):
             if step % 10 == 0:
                 avg_time_per_step = (time.time() - start) / 10
                 start = time.time()
+                print("{} exceptions in the {} step".format(num_exception, 10))
+                num_exception = 0
                 print('Step {}, model loss {:.4f}, total loss {:.4f}, {:.2f} seconds/step'.format(step, ml, tl,
                                                                                                       avg_time_per_step))
 
