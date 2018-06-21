@@ -81,7 +81,7 @@ def dense(inputs, out_dimension, use_biase=False,name=None,trainable=True):
     #     name=name,kernel_initializer=tf.variance_scaling_initializer())
 
 
-def conv2d(inputs, out_channal, kernel_size, strides, use_bias=False, trainable=True, name=None):
+def conv2d(inputs, out_channal, kernel_size, strides, use_bias=False, trainable=True, name=None, padding = 'SAME'):
     """
     卷积
     :param inputs: [批，高，宽，通道数]
@@ -92,13 +92,12 @@ def conv2d(inputs, out_channal, kernel_size, strides, use_bias=False, trainable=
     :param use_bias:
     :return:
     """
-    padding = 'SAME'
-    if strides > 1:  # 如果步长大于1，需要填充
-        pad_total = kernel_size - 1
-        pad_beg = pad_total // 2
-        pad_end = pad_total - pad_beg
-        inputs = tf.pad(inputs, [[0, 0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]], constant_values=0)
-        padding = 'VALID'
+    # if strides > 1:  # 如果步长大于1，需要填充
+    #     pad_total = kernel_size - 1
+    #     pad_beg = pad_total // 2
+    #     pad_end = pad_total - pad_beg
+    #     inputs = tf.pad(inputs, [[0, 0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]], constant_values=0)
+    #     padding = 'VALID'
     in_channel = inputs.shape[-1]
     with tf.variable_scope(name):
         init_weights = tf.truncated_normal_initializer(0.0, stddev=0.01)

@@ -229,11 +229,12 @@ import cv2
 
 
 
-a = tf.constant([3,8])
-b = tf.where(a>10)[:,0]
-gg = tf.gather(a, b)
-positive_indices = tf.random_shuffle(b)[:0]
-
+a = tf.constant([3.4,8.5])
+# b = tf.where(a>10)[:,0]
+# gg = tf.gather(a, b)
+# positive_indices = tf.random_shuffle(b)[:0]
+b = a>4.0
+print(b)
 with tf.Session() as sess:
-    print(sess.run(positive_indices))
+    print(sess.run(b))
 

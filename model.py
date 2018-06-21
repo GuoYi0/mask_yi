@@ -117,7 +117,7 @@ def overlaps_graph(boxes1, boxes2):
 
 def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
     """
-    一批一批地处理，该函数只能处理一批
+    一批一批地处理，该函数只能处理一批,处理的范围有，调节正负proposal比例，并贴上分类标签，裁剪mask并缩放至MASK_SHAPE
     :param proposals: 一张图片对应的许多proposal，形状是[N, (x1, y1, x2, y2)] ，归一化坐标
     :param gt_class_ids: 形状是 [MAX_GT_INSTANCES]，即，其长度等于每张图片的实例个数，一般不等于N
     :param gt_boxes: [MAX_GT_INSTANCES, (x1, y1, x2, y2)]
@@ -237,14 +237,9 @@ def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
         negative_count = tf.minimum(10, tf.size(negative_indices))
         negative_indices = tf.random_shuffle(negative_indices)[:negative_count]
         proposals = tf.gather(proposals, negative_indices)
-
-        b = negative_count  # 负的
-        roi_gt_class_ids = tf.convert_to_tensor()
-        roi_gt_class_ids = tf.pad(roi_class_ids, [(0, b)])  # 负例的pad为0
-        gt_deltas = tf.pad(gt_deltas, [(0, b), (0, 0)])
-        masks = tf.pad(masks, [(0, b), (0, 0), (0, 0)])
-
-
+        roi_gt_class_ids = tf.constant(0,dtype=tf.int32, shape=(10,))
+        gt_deltas = tf.constant(0.0, dtype=tf.float32, shape=(10, 4))
+        masks = tf.constant(0.0,dtype=tf.float32,shape=(10,)+ config.MASK_SHAPE )
 
     ###################################以下代码是为了多批数训练而写的，每次训练一批时不用填充##################
     # a = tf.maximum(config.TRAIN_ROIS_PER_IMAGE - tf.shape(proposals)[0], 0)  # 不够凑足一个TRAIN_ROIS_PER_IMAGE的
@@ -262,7 +257,7 @@ def box_deltas(box, gt_box):
     高的回归 = log(GT的高 / anchor的高)
     :param box: [N, (x1, y1, x2, y2)]
     :param gt_box: [N, (x1, y1, x2, y2)]
-    :return: [dx, dy, dh, dw]
+    :return: [N,(dx, dy, dh, dw)]
     """
     asserts = [tf.Assert(tf.equal(tf.shape(box)[0], tf.shape(gt_box)[0]), ["The length of box and gt_box must be same"])]
     with tf.control_dependencies(asserts):
@@ -294,7 +289,7 @@ def box_deltas(box, gt_box):
 
 def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     """
-    该函数根据特征输出，来制定proposal，这些proposal已经进行了非极大值抑制
+    该函数根据anchor，来制定proposal，这些proposal已经进行了非极大值抑制
     :param inputs: 包含三个元素的列表， 依次是rpn_binary_class, rpn_bbox, anchors
     :param max_proposal:
     :param nms_thresh:
@@ -348,7 +343,7 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     boxes = tf.clip_by_value(boxes, 0, 1)
     width = boxes[:,2] - boxes[:,0]
     height = boxes[:,3] - boxes[:, 1]
-    index = tf.where((width > 0.00001) & (height > 0.00001))[:,0]
+    index = tf.where(tf.logical_and((width > 0.00001), (height > 0.00001)))[:,0]
     boxes = tf.gather(boxes, index)
     scores = tf.gather(scores, index)
     # 这里的boxes有可能是空
@@ -358,7 +353,7 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
 def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size, num_classes, name=None):
     """
     构建FPN的分类与回归
-    :param rois: Proposals， [batch, num_rois, (x1, y1, x2, y2)]
+    :param rois: Proposals， [num_rois, (x1, y1, x2, y2)]
     :param mrcnn_feature_maps: 一个列表，[p2, p3, p4, p5] 代表四个层级的特征图
     其相对于输入图片的缩放倍数依次是8, 16， 32， 64
     :param input_image_shape: 原始输入图片的shape，[高，宽，通道数]。一个批次的所有图片，必须有相同的shape
@@ -369,12 +364,18 @@ def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size,
 
     # [num_boxes, height, width, channels], ROI Pooling后的结果
     x = pyramidROIAlign(pool_size, rois, input_image_shape, mrcnn_feature_maps)
+    asserts0 = tf.Assert(tf.shape(x)[0] > 0, [tf.shape(x)])
+    with tf.control_dependencies([asserts0]):
+        x = tf.identity(x)
 
     num_boxes = tf.shape(x)[0]
 
     # 这里其实就是全连接,并且批数由num_boxes代替了
-
     x = conv2d(inputs=x,out_channal=1024, kernel_size=pool_size[0],strides=pool_size[0], use_bias=True, name=name+"_class_conv1")
+
+    asserts = tf.Assert(tf.shape(x)[1] == 1, [tf.shape(x)])
+    with tf.control_dependencies([asserts]):
+        x = tf.identity(x)
 
     # 这里是全连接，就不来batch_norm了
     x = tf.nn.relu(x)
@@ -398,47 +399,49 @@ def pyramidROIAlign(pool_size, rois, image_shape, feature_maps):
     """
     在不同层次的feature map上执行 ROI Pooling
     :param pool_size:  特征图进行feature pool以后的网格，[高，宽]，通常是[7，7]
-    :param rois: [batch, num_boxex, (x1, y1, x2, y2)],归一化坐标，如果不够，就用零填充
+    :param rois: [num_boxex, (x1, y1, x2, y2)], 归一化坐标
     :param image_shape: 原始输入图片的shape，[高，宽，通道数]。一个批次的所有图片，必须有相同的shape
     :param feature_maps: 一个列表，列表每个元素表示来自不同特征图层级的，shape都是[batch, height, width, channels]
     :return: [num_boxes, height, width, channels], ROI Pooling后的结果
     """
-    x1, y1, x2, y2 = tf.split(rois, 4, axis=2)  # shape [batch, num, 4]
-    h = y2 - y1  # shape [batch, num, 1]
+    asserts = tf.Assert(tf.shape(rois)[0] > 0,data=[tf.shape(rois)])
+    with tf.control_dependencies([asserts]):
+        rois = tf.identity(rois)
+    x1, y1, x2, y2 = tf.split(rois, 4, axis=1)  # shape [num, 4]
+    h = y2 - y1  # shape [num, 1]
     w = x2 - x1
 
     image_area = tf.cast(image_shape[0]*image_shape[1], tf.float32)
     # 下面这几行，根据FPN的式(1)而来。我们的proposal明明有指定的来源，即每个proposal来自哪个层级，是清晰的，
     # 奈何这里又要根据公式(1)指定层级呢？
     # TODO 这里有待研究，论文写得蛋疼
-    roi_level = tf.log(h*w*image_area/(224.0*224.0))/tf.log(2.0)/2  # shape [batch, num, 1]
+    roi_level = tf.log(h*w*image_area/(224.0*224.0))/tf.log(2.0)/2  # shape [num, 1]
     roi_level = tf.minimum(5, tf.maximum(2, 4+ tf.cast(tf.round(roi_level), tf.int32)))
-    roi_level = tf.squeeze(roi_level, 2)  # shape [batch, num]
+    roi_level = tf.squeeze(roi_level, -1)  # shape [num]
 
     # 对每一个层级进行遍历
     pooled, box_to_level = [], []
     for i, level in enumerate(range(2, 6)):
-        # tf.where()的返回值中，有几个真值就返回几行，每一行代表这个真值的坐标值
-        # 这里，roi_level的rank是2，故，ix的每一行有两个元素，代表了该真值所在坐标位置,坐标中，
-        # 第一个表示来自哪一批，第二个表示来自该批的第几个
-        ix = tf.where(tf.equal(roi_level, level))
-        level_boxes = tf.gather_nd(rois, ix)
-        batch_indices = tf.cast(ix[:, 0], tf.int32)  # 反映批数信息，为下面切片做准备
+
+        ix = tf.where(tf.equal(roi_level, level))[:,0]
+        if ix.shape[0] == 0:
+            continue
+        level_boxes = tf.gather(rois, ix)
+
         box_to_level.append(ix)  # 记录该层级所拥有的proposal坐标
 
         # 用approximate joint training的法则，把proposal当作常数处理，对梯度不贡献
         level_boxes = tf.stop_gradient(level_boxes)
-        batch_indices = tf.stop_gradient(batch_indices)
 
-        with tf.control_dependencies([tf.assert_rank(
-                level_boxes, 2, data=["may be some wrong in how to use api tf.gather_nd"])]):
-            x1, y1, x2, y2 = tf.split(level_boxes, 4, 1)
-            temp = tf.concat([y1, x1, y2, x2], axis=1)
-            # temp = tf.stack()
-            def list_append():
-                pooled.append(tf.image.crop_and_resize(
-                    feature_maps[i], temp, batch_indices, pool_size, method='bilinear'))
-            tf.cond(temp.shape[0] > 0, list_append)
+
+
+        x1, y1, x2, y2 = tf.split(level_boxes, 4, 1)
+        temp = tf.concat([y1, x1, y2, x2], axis=1)
+        # temp = tf.stack()
+        def list_append():
+            pooled.append(tf.image.crop_and_resize(
+                feature_maps[i], temp, tf.constant(0,tf.int32,shape=(temp.shape[0],)), pool_size, method='bilinear'))
+        tf.cond(temp.shape[0] > 0, list_append)
 
             # roi是有零填充的，零填充以后，所截取的feature map，还怎么放大到7*7？？？
             # tf.image.crop_and_resize返回的shape是[所截取图片张数，高，宽，通道数]
@@ -446,24 +449,13 @@ def pyramidROIAlign(pool_size, rois, image_shape, feature_maps):
     # 合并成tensor，shape是[num_pic, height, width, channels]
     pooled = tf.concat(pooled, axis=0)
 
-    # 下面这几条蛋疼的代码，是为了将同一批次的组合起来，然后合并成[批数，num_pic， 高，宽，通道数]
-    # 有时间再看吧，实在懒了，就令batch_size = 1 万事大吉
-    # 在第三列添加一个标记，记录box的id
-    box_to_level = tf.concat(box_to_level, axis=0) # shape 是[图片张数， 2]
-    box_range = tf.expand_dims(tf.range(tf.shape(box_to_level)[0]), 1)  # [图片张数，1]
-    box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range], axis=1)  # [num_pic, 3]
-    # 排序，以批次号为主，批次号相同的，再看box index
-    sorting_tensor = box_to_level[:, 0] * 1000 + box_to_level[:, 1]  # [num_pic]
-    ix = tf.nn.top_k(sorting_tensor, k=tf.shape(box_to_level)[0], sorted=True).indices[::-1]
-    pooled = tf.gather(pooled, ix)
-
     return pooled
 
 
 def build_fpn_mask_graph(rois, feature_maps, image_shape, pool_size, num_class, train_bn=True, name=None):
     """
     构建mask
-    :param rois:  Proposals， [batch, num_rois, (x1, y1, x2, y2)]
+    :param rois:  Proposals， [num_rois, (x1, y1, x2, y2)]
     :param feature_maps:  一个列表，[p2, p3, p4, p5] 代表四个层级的特征图
     :param image_shape: 原始输入图片的shape，[高，宽，通道数]。一个批次的所有图片，必须有相同的shape
     :param pool_size: ROI Pooling后的大小，在论文中，对于mask是14*14
@@ -473,6 +465,9 @@ def build_fpn_mask_graph(rois, feature_maps, image_shape, pool_size, num_class, 
     """
     # [num_boxes, height, width, channels], ROI Pooling后的结果
     x = pyramidROIAlign(pool_size, rois,image_shape,feature_maps)
+    asserts = tf.Assert(tf.shape(x)[0] > 0,data=[tf.shape(x)])
+    with tf.control_dependencies([asserts]):
+        x = tf.identity(x)
     for i in range(4):
         x = conv2d(inputs=x, out_channal=256, kernel_size=3, strides=1, use_bias=False, name=name+"_conv"+str(i+1))
         x = batch_norm(x, train_bn, name=name+"_bn"+str(i+1))
@@ -734,12 +729,12 @@ class MASK_RCNN(object):
         mode是'inference'时，只需要提供input_image即可
 
         :param mode:  必须是'training','validation','inference'三者之一
-        :param input_image: [1, 高, 宽, 3]  # 简单一点，每次一张图片
-        :param gt_boxes: shape=[1, gt个数， 4]
-        :param class_ids: shape=[1, gt个数]
-        :param input_gt_mask: [1，gt个数，高，宽]
-        :param anchor_labels: [批数，anchor个数]，其中1表示正例，0表示负例，-1表示不予考虑
-        :param anchor_deltas: anchor与gt之间的回归差异，[批数，anchor个数，(dx, dy, log(h), log(w))]
+        :param input_image: [1, 高, 宽, 3]  # 简单一点，每次一张图片, float32
+        :param gt_boxes: shape=[1, gt个数， 4], float32
+        :param class_ids: shape=[1, gt个数], tf.int32
+        :param input_gt_mask: [1，gt个数，高，宽], bool
+        :param anchor_labels: [批数，anchor个数]，其中1表示正例，0表示负例，-1表示不予考虑, int32
+        :param anchor_deltas: anchor与gt之间的回归差异，[批数，anchor个数，(dx, dy, log(h), log(w))], float32
         :return:
         """
         mode_validation = mode in ['training','validation','inference']
@@ -798,7 +793,7 @@ class MASK_RCNN(object):
         if self.anchors is None:
             self.get_anchors(config.batch_size, resolution, config.input_shape, config.smallest_anchor_size)
 
-        # 生成经过非极大值抑制后的proposal, 形状是 [个数，4]
+        # 根据anchor来生成经过非极大值抑制后的proposal, 形状是 [个数，4]
         proposal = proposalLayer(inputs=[rpn_binary_probs, rpn_bbox_pred, self.anchors],
                                  max_proposal=num_proposal,nms_thresh=config.RPN_NMS_THRESHOLD, name="ROI")
 
@@ -815,14 +810,11 @@ class MASK_RCNN(object):
             return [boxes, ids, probs, mask]
 
         else:
-            # 调用detection_targets函数，返回proposal,以及相应的类别、回归、masks
+            # 调用detection_targets函数，处理proposal，返回proposal,以及相应的类别、回归、masks
             # 因为批数不好处理，故只能蛋疼地分成一批一批地处理
 
-                # roi_gt_class_ids[M], 反映proposal的分类
-                # gt_deltas[M, (dx, dy, log(h), log(w))]
-                # 反映proposal相对于gt的回归
-                # masks[M, 高，宽]
-                # [N, (x1, y1, x2, y2)]; [N];  [N, 4]; [N, 高，宽]
+
+                # [N, (x1, y1, x2, y2)]; [N];  [N, 4]; [N, 高，宽],float32
             rois, target_class_ids, target_bbox, target_mask = detection_targets(
                 proposal, gt_class_ids=class_ids[0],gt_boxes=gt_boxes[0],gt_masks=input_gt_mask[0])
 
@@ -832,7 +824,7 @@ class MASK_RCNN(object):
             # mrcnn_class_logits, mrcnn_class_probs的shape都是[num_boxex, num_classes]
             # mrcnn_bbox 的shape是[num_boxex, num_classes, (dx, dy, log(h), log(w))]
             mrcnn_class_logits, mrcnn_class_probs, mrcnn_bbox = fpn_classifier_graph(
-                rois, mrcnn_feature_maps, config.IMAGE_SHAPE,config.POOL_SIZE, config.NUM_CLASSES, name="mrcnn")
+                rois, mrcnn_feature_maps, config.IMAGE_SHAPE, config.POOL_SIZE, config.NUM_CLASSES, name="mrcnn")
 
             # [num_boxes, 28, 28, num_classes]
             mrcnn_mask_logits = build_fpn_mask_graph(
@@ -842,10 +834,10 @@ class MASK_RCNN(object):
             # rpn loss
             rpn_binary_loss = rpn_binary_loss_graph(anchor_labels, rpn_binary_logits)
             rpn_bbox_loss = rpn_bbox_loss_graph(anchor_deltas, rpn_bbox_pred, anchor_labels)
-            # TODO some problem in this loss
             proposal_class_loss, targets_id = proposal_class_loss_graph(target_class_ids, mrcnn_class_logits, config.NUM_CLASSES)
             proposal_bbox_loss = proposal_bbox_loss_graph(target_bbox,mrcnn_bbox,target_class_ids)
             mask_loss = mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, config.NUM_CLASSES)
+
             rpn_loss = rpn_binary_loss + rpn_bbox_loss  # rpn的损失
             proposal_loss = proposal_class_loss + proposal_bbox_loss  # proposal的损失
             total_loss = rpn_loss + proposal_loss + mask_loss

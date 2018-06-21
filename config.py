@@ -56,10 +56,10 @@ TRAIN_ROIS_PER_IMAGE = 200
 
 # 每张图片训练多少个anchors
 RPN_TRAIN_ANCHORS_PER_IMAGE = 256
-# 正例样本在总样本中的占比
+# 正例样本在总样本中的占比，正例有很多不同类别，而这里占比这么小，可能会有问题
 ROI_POSITIVE_RATIO = 0.3333
 # 根据论文图4右边，mask的大小为 28*28
-MASK_SHAPE = [28, 28]  # 必须是下面的两倍
+MASK_SHAPE = (28, 28)  # 必须是下面的两倍
 MASK_POOL_SIZE = (14, 14) # 必须是上面的一半
 POOL_SIZE = (7, 7)  # ROI Pooling层的大小，一般是7*7
 NUM_CLASSES = 90 + 1  # 图片分为多少个类别。80类正例加一类背景。一般来说，我建议先分为object/non-object，

@@ -30,7 +30,7 @@ def main(_):
     # 类别编号 [批数，MAX_GT_INSTANCES]
     class_ids = tf.placeholder(dtype=tf.int32, shape=(1, None), name='class_ids')
     # MASK，[批数，MAX_GT_INSTANCES， 高，宽]，每个GT都要有一个标签，一个mask
-    input_gt_mask = tf.placeholder(dtype=tf.float32, shape=(1, None, None, None), name='input_gt_mask')
+    input_gt_mask = tf.placeholder(dtype=tf.bool, shape=(1, None, None, None), name='input_gt_mask')
     # 真实的anchor标签，[批数，anchor个数]，其中1表示正例，0表示负例，-1表示不予考虑
     rpn_binary_gt = tf.placeholder(dtype=tf.int32, shape=(1, None), name='rpn_binary_gt')
     # anchor与gt之间的回归差异，[批数，anchor个数，(dx, dy, log(h), log(w))]
