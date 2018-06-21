@@ -424,7 +424,8 @@ def pyramidROIAlign(pool_size, rois, image_shape, feature_maps):
     for i, level in enumerate(range(2, 6)):
 
         ix = tf.where(tf.equal(roi_level, level))[:,0]
-        if ix.shape[0] == 0:
+        num = ix.shape[0]
+        if num == 0:
             continue
         level_boxes = tf.gather(rois, ix)
 
@@ -438,10 +439,13 @@ def pyramidROIAlign(pool_size, rois, image_shape, feature_maps):
         x1, y1, x2, y2 = tf.split(level_boxes, 4, 1)
         temp = tf.concat([y1, x1, y2, x2], axis=1)
         # temp = tf.stack()
-        def list_append():
-            pooled.append(tf.image.crop_and_resize(
-                feature_maps[i], temp, tf.constant(0,tf.int32,shape=(temp.shape[0],)), pool_size, method='bilinear'))
-        tf.cond(temp.shape[0] > 0, list_append)
+        # def list_append():
+        # 这里需要定义一个长度为 num，全是零的以为数组，不知道怎么搞
+        box_inds = tf.zeros(shape=(10000,),dtype=tf.int32)
+        # box_ind = tf.constant(0, dtype=tf.int32, shape=(num,))
+        pooled.append(tf.image.crop_and_resize(
+            feature_maps[i], temp, box_inds, pool_size, method='bilinear'))
+        # tf.cond(temp.shape[0] > 0, list_append)
 
             # roi是有零填充的，零填充以后，所截取的feature map，还怎么放大到7*7？？？
             # tf.image.crop_and_resize返回的shape是[所截取图片张数，高，宽，通道数]
@@ -575,15 +579,13 @@ def proposal_class_loss_graph(target_ids, logits, num_class):
 
 def mask_loss_graph(target_mask, mrcnn_mask_logits, target_class_ids, num_class):
     """
-    :param target_mask: [batch, N, 高，宽]
+    :param target_mask: [ N, 高，宽]
     :param mrcnn_mask_logits:  [num_boxes, 28, 28, num_classes]
     :param target_class_ids: [batch, N]
     :param num_class: 类别数
     :return:
     """
     target_class_ids = tf.reshape(target_class_ids, [-1])  # [num_boxes]
-    target_shape = tf.shape(target_mask)
-    target_mask = tf.reshape(target_mask, (-1, target_shape[2], target_shape[3]))  # [num_boxex, 高，宽]
 
     mrcnn_mask_logits = tf.transpose(mrcnn_mask_logits, [0, 3, 1, 2])  # [num_boxes, num_classes, 28, 28]
 
