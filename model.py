@@ -558,18 +558,25 @@ def proposal_bbox_loss_graph(target_bbox,mrcnn_bbox,target_class_ids):
     with tf.control_dependencies(
             [tf.Assert(tf.logical_and(tf.equal(tf.shape(target_bbox)[0], tf.shape(mrcnn_bbox)[0]),
                                       tf.equal(tf.shape(mrcnn_bbox)[0], tf.shape(target_class_ids)[0])),
-                       data=["the shape must be same"]  )]):
+                       data=["the shape must be same"])]):
         positive_ix = tf.cast(tf.where(target_class_ids > 0)[:, 0], tf.int32)
 
-    positive_class_ids = tf.cast(tf.gather(target_class_ids, positive_ix), tf.int32)  # 正例的具体id
-    indice = tf.stack([positive_ix, positive_class_ids], axis=1)  # [在num_box中的索引编号，具体的id号]
-    mrcnn_bbox = tf.gather_nd(mrcnn_bbox, indice)  # [N, 4]
+    def loss_valid():
+        positive_class_ids = tf.cast(tf.gather(target_class_ids, positive_ix), tf.int32)  # 正例的具体id
+        indice = tf.stack([positive_ix, positive_class_ids], axis=1)  # [在num_box中的索引编号，具体的id号]
+        mrcnn_bbox2 = tf.gather_nd(mrcnn_bbox, indice)  # [N, 4]
 
-    target_bbox = tf.gather(target_bbox, positive_ix)  # [N, 4]
+        target_bbox2 = tf.gather(target_bbox, positive_ix)  # [N, 4]
 
-    loss = tf.reduce_sum(smooth_l1_loss(target_bbox - mrcnn_bbox))
+        loss = tf.reduce_sum(smooth_l1_loss(target_bbox2 - mrcnn_bbox2))
+        loss / tf.cast(tf.size(positive_ix), tf.float32)
+        return loss
 
-    return tf.where(tf.size(positive_ix) > 0,loss / tf.cast(tf.size(positive_ix), tf.float32),tf.constant(0.0))
+    def loss_zero():
+        return tf.constant(0.0)
+
+    final_loss = tf.cond(tf.greater(tf.size(positive_ix), 0), loss_valid, loss_zero)
+    return final_loss
 
 
 def proposal_class_loss_graph(target_ids, logits, num_class):
