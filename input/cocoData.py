@@ -137,7 +137,25 @@ class CocoDataset(object):
             # 通过coco的类别id，得到该class的编号id
             class_id = self.class_from_source_map["coco.{}".format(ann["category_id"])]
             if class_id:
-                m = coco.annToMask(ann)
+                m = self.coco.annToMask(ann)
+                if m.max() < 1:
+                    continue
+                if ann["iscrowd"]:
+                    class_id *= -1
+                    if m.shape[0] != image_info['height'] or m.shape[1] != image_info['width']:
+                        m = np.ones([image_info['height'], image_info['width']], dtype=bool)
+                instance_masks.append(m)
+                class_ids.append(class_id)
+
+        if class_ids:
+            mask = np.stack(instance_masks, axis=2).astype(np.bool)
+            class_ids = np.array(class_ids, dtype=np.int32)
+            return mask, class_ids
+        else:
+            mask = np.empty(shape=[0, 0, 0])
+            class_ids = np.empty(shape = [0], dtype=np.int32)
+            return mask, class_ids
+
 
     def auto_download(self, dataDir, dataType, dataYear):
         """Download the COCO dataset/annotations if requested.
