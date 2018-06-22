@@ -8,25 +8,35 @@ import numpy as np
 
 
 class CocoDataset(object):
-    def __init__(self):
+    def __init__(self, dataset_dir, subset, year,class_ids=None,return_coco=False, auto_download=False):
+        self.num_classes = 0  # 类别数，包括背景
+        self.class_ids = None  # 类别id
+        self.class_names = None  # 类的名字
+        self.num_images = None  # 图片张数
+        self._image_ids = None  # 这个class里面的图片的编号，从0到张数，并非coco的内置的图片id
+
+        # 生成一个很多表项的字典，从coco数据集的类别ID映射到该class定义的类别编号
+        self.class_from_source_map = None
+        # 从coco数据集的图片ID映射到该class定义的图片编号
+        self.image_from_source_map = None
+
+        # 一个字典，键是“coco”，名是一个列表，列表包含了所有的类别id，从1到90
+        self.source_class_ids = {"coco": list(range(self.num_classes))}
         self._image_ids = []
         # 字典列表， source是"coco", 图片id，图片所存放的地址, 图片的高，宽，标注
         self.image_info = []
         # 字典列表，source永远是"coco"，类别id，这个id对应的类别的英文名
         self.class_info = [{"source":"", "id": 0, "name": "BG"}]
         self.source_class_ids = {}
+        if auto_download is True:
+            self.auto_download(dataset_dir, subset, year)
+        self.coco = COCO("{}/annotations/instances_{}{}.json".format(dataset_dir, subset, year))
+        self.load_coco(dataset_dir, subset, year,class_ids,return_coco, auto_download)
 
     def add_image(self, source, image_id, path, **kwargs):
         image_info = {"id": image_id, "source": source, "path": path}
         image_info.update(kwargs)
         self.image_info.append(image_info)
-
-    def get_imgInfo_byID(self, imgID):
-        for img_info in self.image_info:
-            if img_info["id"] == imgID:
-                return img_info
-        return None
-
 
     def add_class(self, source, class_id, class_name):
         assert "." not in source, "Source name cannot contain a dot"
@@ -54,47 +64,41 @@ class CocoDataset(object):
         :return:
         """
         assert subset in ("train", "val"), "subset must be either 'train' or 'val' !"
-        if auto_download:
-            self.auto_download(dataset_dir, subset, year)
 
         image_dir = "{}/{}{}".format(dataset_dir, subset, year)
-        coco = COCO("{}/annotations/instances_{}{}.json".format(dataset_dir, subset, year))
+
         if not class_ids:
             # 获取全部的类别，train2017的类别标注是从1到90
-            class_ids = sorted(coco.getCatIds())
+            class_ids = sorted(self.coco.getCatIds())
 
         if class_ids:
             # 根据类别ids来获取图片ids
             image_ids = []
             for class_id in class_ids:
-                image_ids.extend(list(coco.getImgIds(catIds=[class_id])))
+                image_ids.extend(list(self.coco.getImgIds(catIds=[class_id])))
             image_ids = list(set(image_ids))  # 去重
         else:  # 获取全部的图片ids
-            image_ids = list(coco.imgs.keys())
+            image_ids = list(self.coco.imgs.keys())
 
         # 把类别添加进去
         for i in class_ids:
-            self.add_class("coco", i, coco.loadCats(i)[0]["name"])
+            self.add_class("coco", i, self.coco.loadCats(i)[0]["name"])
 
         for i in image_ids:
             self.add_image(
                 "coco",
                 image_id=i,
-                path=os.path.join(image_dir, coco.imgs[i]['file_name']),
-                height=coco.imgs[i]["height"],
-                width=coco.imgs[i]["width"],
-                annotations = coco.loadAnns(coco.getAnnIds([i], class_ids, iscrowd=None))
+                path=os.path.join(image_dir, self.coco.imgs[i]['file_name']),
+                height=self.coco.imgs[i]["height"],
+                width=self.coco.imgs[i]["width"],
+                annotations = self.coco.loadAnns(self.coco.getAnnIds([i], class_ids, iscrowd=None))
             )
-
-        if return_coco:
-            return coco
 
     @property
     def image_ids(self):
         return self._image_ids
 
     def prepare(self):
-
         def clean_name(name):
             """Returns a shorter version of object names for cleaner display."""
             return ",".join(name.split(",")[:1])
@@ -120,12 +124,20 @@ class CocoDataset(object):
 
 
     def load_mask(self, image_id):
-        image_info = self.get_imgInfo_byID(image_id)
+        """
+        给定图片编号，获取mask
+        :param image_id: 图片编号
+        :return:
+        """
+        image_info = self.image_info[image_id]
         instance_masks = []
         class_ids = []
         annotations = image_info["annotations"]
-        for ann in annotations
-
+        for ann in annotations:
+            # 通过coco的类别id，得到该class的编号id
+            class_id = self.class_from_source_map["coco.{}".format(ann["category_id"])]
+            if class_id:
+                m = coco.annToMask(ann)
 
     def auto_download(self, dataDir, dataType, dataYear):
         """Download the COCO dataset/annotations if requested.
