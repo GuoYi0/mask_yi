@@ -6,7 +6,7 @@ import os
 
 # common
 dataDir = '.'
-train_type = 'train2017'
+train_type = 'val2017'
 trainImage_path = '{}/cocodata2/images'.format(dataDir)
 train_annFile = '{}/cocodata2/annotations/instances_{}.json'.format(dataDir,train_type)
 checkpoint_path = 'checkpoints'
@@ -69,7 +69,7 @@ DETECTION_MIN_CONFIDENCE = 0.7  # 属于某一类别的置信度阈值
 DETECTION_MAX_INSTANCE = 100  # 每一张图片里面，最多检测出的instance个数
 DETECTION_NMS_THRESHHOLD = 0.3  # 同类别的检测的非极大值抑制阈值
 BACKBONE_STRIDES = []
-
+CROP_AUGMENTATION = False  # 是否通过裁剪来进行数据增强
 
 if __name__ == '__main__':
     print(os.getcwd())

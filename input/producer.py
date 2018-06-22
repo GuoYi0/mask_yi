@@ -8,7 +8,7 @@ from config import train_annFile
 from config import batch_size
 from config import trainImage_path
 from config import pixel_average
-from input.preprocess import data_augmentation,cls_target,mask_target
+from input.preprocess import data_augmentation,cls_target,mask_target, resize
 from lib.gen_box import norm_boxes
 from visualize import apply_box_mask
 from config import input_shape
@@ -26,8 +26,8 @@ def producer():
     imgIds = coco.getImgIds()
 
     imgIds_list = tf.constant(imgIds)
-    class_ids = sorted(coco.getCatIds())
-    print(class_ids," 000000")
+    # class_ids = sorted(coco.getCatIds())
+    # print(class_ids," 000000")
 
     dataset = tf.data.Dataset.from_tensor_slices((imgIds_list,))
     dataset = dataset.map(
@@ -55,9 +55,9 @@ def sample_handler(imgId=532481):
 
     img_path = os.path.join(trainImage_path, img_name)
     image = cv2.imread(img_path)
-    if image is None:
-        print("No image to read in path {}".format(img_path))
-        raise
+    # if image is None:
+    #     print("No image to read in path {}".format(img_path))
+    #     raise
     image = np.array(image, dtype=np.float32)
     image -= pixel_average  # 去均值
 
@@ -91,14 +91,18 @@ def sample_handler(imgId=532481):
                       bbox[1],
                       bbox[0] + bbox[2],
                       bbox[1] + bbox[3]]
-
             bboxes.append(bbox_n)
             segmentations.append(m)
             class_ids.append(class_id)
 
     raw_size = np.array((height, width), dtype=np.float32)
 
-    image, bboxes, class_ids, segmentations = data_augmentation(image, raw_size, bboxes, class_ids, segmentations)
+    bboxes = np.array(bboxes,dtype=np.float32)
+    class_ids = np.array(class_ids,dtype=np.int32)
+    if config.CROP_AUGMENTATION:
+        image, bboxes, class_ids, segmentations = data_augmentation(image, raw_size, bboxes, class_ids, segmentations)
+
+    image, bboxes, segmentations = resize(image, bboxes, segmentations)
 
     # 所有anchor的标签，以及回归值
     anchor_labels, anchor_deltas = cls_target(image.shape, bboxes, class_ids)

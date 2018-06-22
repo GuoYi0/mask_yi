@@ -27,26 +27,8 @@ coco = COCO(train_annFile)
 from lib import bbox_overlaps
 from lib import draw_boxes
 
-
-def data_augmentation(image, raw_size, bboxs, categories, segmentations):
-    """
-    :param image: 仅仅去均值以后的图片
-    :param raw_size: (高，宽)输入图片的大小
-    :param bboxs: 一个列表，每个元素依然是列表，元素列表包含四个元素，x1, y1, x2, y2
-    :param segmentations: 一个列表， 每个元素是binary mask (numpy 2D array)
-    :param categories： int型列表
-    :return: crop_and_resize_image, bboxs, segmentations
-    """
-    rdm_ratio = random_resize[npr.randint(0, len(random_resize))]  # 0.5， 1， 1.5， 2
-
-    new_size = raw_size * rdm_ratio
-    image = cv2.resize(image, (int(new_size[1]), int(new_size[0])))
-
-    bboxs = np.array(bboxs, dtype=np.float32) * rdm_ratio
-    segmentations = [cv2.resize(seg.astype(np.float32),(int(new_size[1]), int(new_size[0]))) for seg in segmentations]
-
-    # crop some area form image
-    image, bboxs, segmentations, categories = crop_area(image, bboxs, segmentations, categories)
+def resize(image, bboxs, segmentations):
+    bboxs = bboxs.astype(np.int32)
     if USE_MINI_MASK:
         mini_segs = []
         for i in range(len(segmentations)):
@@ -58,20 +40,39 @@ def data_augmentation(image, raw_size, bboxs, categories, segmentations):
     else:
         segmentations = [cv2.resize(seg, input_shape) for seg in segmentations]
 
-    gt_class = np.array(categories, np.int32)
-    # resize the cropped image to input; size ratio = raw size / input size
-
     resize_ratio_h = image.shape[0] / input_shape[0]
     resize_ratio_w = image.shape[1] / input_shape[1]
     image = cv2.resize(image, input_shape)
     if len(bboxs) > 0:
         bboxs[:, [0, 2]] = bboxs[:, [0, 2]] / resize_ratio_w
         bboxs[:, [1, 3]] = bboxs[:, [1, 3]] / resize_ratio_h
+    return image, bboxs, segmentations
+
+def data_augmentation(image, raw_size, bboxs, categories, segmentations):
+    """
+    :param image: 仅仅去均值以后的图片
+    :param raw_size: (高，宽)输入图片的大小
+    :param bboxs: numpy数组 [N, (x1, y1, x2, y2)]
+    :param segmentations: 一个列表， 每个元素是binary mask (numpy 2D array)
+    :param categories： int型一维数组
+    :return: crop_and_resize_image, bboxs, segmentations
+    """
+    rdm_ratio = random_resize[npr.randint(0, len(random_resize))]  # 0.5， 1， 1.5， 2
+
+    new_size = raw_size * rdm_ratio
+    image = cv2.resize(image, (int(new_size[1]), int(new_size[0])))
+
+    bboxs = bboxs * rdm_ratio
+    segmentations = [cv2.resize(seg.astype(np.float32),(int(new_size[1]), int(new_size[0]))) for seg in segmentations]
+
+    # crop some area form image
+    image, bboxs, segmentations, categories = crop_area(image, bboxs, segmentations, categories)
+
 
     # image_draw = draw_boxes(image.copy(), bboxs)
     # cv2.imwrite('./demo.jpg', image_draw)
 
-    return image, bboxs, gt_class, segmentations
+    return image, bboxs, categories, segmentations
 
 # image, bboxs, segmentations, categories
 def crop_area(im, bboxs, masks, tags, crop_background=True, max_tries=50):
@@ -80,7 +81,7 @@ def crop_area(im, bboxs, masks, tags, crop_background=True, max_tries=50):
     :param im: [高，宽，通道数] 已经去均值了
     :param bboxs：numpy数组，[N, (x1, y1, x2, y2)]
     :param masks: 一个长度为N的列表，列表的每个元素是一个二维numpy数组，mask，float型
-    :param tags: 标签列表
+    :param tags: 标签数组
     :param crop_background: 是否裁剪背景
     :param max_tries:
     :return:
@@ -142,7 +143,7 @@ def crop_area(im, bboxs, masks, tags, crop_background=True, max_tries=50):
         im = im[ymin:ymax + 1, xmin:xmax + 1, :]  # 截图
         masks = [masks[i] for i in selected_polys]  # 选择出mask
         masks = [mask[ymin:ymax + 1, xmin:xmax + 1] for mask in masks]  # 截取mask
-        tags = [tags[x] for x in selected_polys] # 截取标签
+        tags = tags[selected_polys] # 截取标签
         bboxs = bboxs[selected_polys]
         bboxs[:, 0] -= xmin
         bboxs[:, 1] -= ymin

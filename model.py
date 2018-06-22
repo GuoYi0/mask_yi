@@ -258,6 +258,9 @@ def detection_targets(proposals, gt_class_ids, gt_boxes, gt_masks):
     # gt_deltas = tf.pad(gt_deltas, [(0, a), (0, 0)])
     # masks = tf.pad(masks, [(0, a), (0, 0), (0, 0)])
 
+    asserts = tf.Assert(tf.shape(proposals)[0] > 0,data=[tf.shape(proposals)])
+    with tf.control_dependencies([asserts]):
+        proposals = tf.identity(proposals)
     return proposals, roi_gt_class_ids, gt_deltas, masks
 
 def box_deltas(box, gt_box):
@@ -310,12 +313,12 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     # rpn_bbox的形状是[批数，anchor数，4]
     deltas = inputs[1]
     deltas = tf.squeeze(deltas * tf.reshape(config.RPN_BBOX_STD_DEV, [1, 1, 4]),0) # [个数，4]
-    anchors = tf.squeeze(inputs[2], 0)  # 取出anchors [ 个数，(x1, y1, x2, y2)],normalized坐标
+    anchors = tf.squeeze(inputs[2], 0)  # 取出anchors [个数，(x1, y1, x2, y2)],normalized坐标
 
 
 
     # 取anchor数和6000的较小值，只保留这些proposal
-    pre_nms_limit = tf.minimum(config.MAX_PROPOSAL_TO_DETECT, tf.shape(anchors)[1])
+    pre_nms_limit = tf.minimum(config.MAX_PROPOSAL_TO_DETECT, tf.shape(anchors)[0])
     # 按照最后一个维度，取出分数最高的前k个的索引,以列表形式返回,这里，ix是一个二维列表
     ix = tf.nn.top_k(scores, pre_nms_limit, sorted=True).indices  # [pre_nms_limit]
     # scores,deltas和anchors的rank都是3， 需要定义一个函数，来对anchor进行选取
@@ -354,11 +357,18 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     width = boxes[:,2] - boxes[:,0]
     height = boxes[:,3] - boxes[:, 1]
     index = tf.where(tf.logical_and((width > 0.0000001), (height > 0.0000001)))[:,0]
-    boxes = tf.gather(boxes, index)
+    boxes2 = tf.gather(boxes, index)
     scores = tf.gather(scores, index)
     # 这里的boxes有可能是空
-    boxes = nms(boxes, scores, max_proposal, nms_thresh)  # [个数，4]
-    return boxes
+    boxes2 = nms(boxes2, scores, max_proposal, nms_thresh)  # [个数，4]
+
+    asserts = [tf.Assert(tf.greater(tf.shape(boxes2)[0], 0), [tf.shape(boxes2), tf.shape(boxes)])]
+    with tf.control_dependencies(asserts):
+        boxes2 = tf.identity(boxes2)
+
+
+
+    return boxes2, boxes
 
 def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size, num_classes, name=None):
     """
@@ -813,7 +823,7 @@ class MASK_RCNN(object):
             self.get_anchors(config.batch_size, resolution, config.input_shape, config.smallest_anchor_size)
 
         # 根据anchor来生成经过非极大值抑制后的proposal, 形状是 [个数，4]
-        proposal = proposalLayer(inputs=[rpn_binary_probs, rpn_bbox_pred, self.anchors],
+        proposal,proposl_pri = proposalLayer(inputs=[rpn_binary_probs, rpn_bbox_pred, self.anchors],
                                  max_proposal=num_proposal,nms_thresh=config.RPN_NMS_THRESHOLD, name="ROI")
 
         if mode == 'inference':
