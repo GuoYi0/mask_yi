@@ -366,8 +366,6 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     with tf.control_dependencies(asserts):
         boxes2 = tf.identity(boxes2)
 
-
-
     return boxes2, boxes
 
 def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size, num_classes, name=None):

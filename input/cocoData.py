@@ -3,10 +3,14 @@ import urllib.request
 import shutil
 import zipfile
 from pycocotools.coco import COCO
+import numpy as np
+
+
+
 class CocoDataset(object):
     def __init__(self):
         self._image_ids = []
-        # 字典列表， source是"coco", 图片id，图片所存放的地址,图片的高，宽，标注
+        # 字典列表， source是"coco", 图片id，图片所存放的地址, 图片的高，宽，标注
         self.image_info = []
         # 字典列表，source永远是"coco"，类别id，这个id对应的类别的英文名
         self.class_info = [{"source":"", "id": 0, "name": "BG"}]
@@ -40,6 +44,7 @@ class CocoDataset(object):
 
     def load_coco(self, dataset_dir, subset, year="2017", class_ids=None,return_coco=False, auto_download=False):
         """
+        加载coco数据集, 填充 class_info和image_info
         :param dataset_dir: 数据集所在路径名
         :param subset: "train" or "val"
         :param year: 暂且只有"2017"
@@ -55,7 +60,7 @@ class CocoDataset(object):
         image_dir = "{}/{}{}".format(dataset_dir, subset, year)
         coco = COCO("{}/annotations/instances_{}{}.json".format(dataset_dir, subset, year))
         if not class_ids:
-            # 获取全部的类别，val2017的类别标注是从1到90
+            # 获取全部的类别，train2017的类别标注是从1到90
             class_ids = sorted(coco.getCatIds())
 
         if class_ids:
@@ -83,6 +88,36 @@ class CocoDataset(object):
 
         if return_coco:
             return coco
+
+    @property
+    def image_ids(self):
+        return self._image_ids
+
+    def prepare(self):
+
+        def clean_name(name):
+            """Returns a shorter version of object names for cleaner display."""
+            return ",".join(name.split(",")[:1])
+
+        # Build (or rebuild) everything else from the info dicts.
+        self.num_classes = len(self.class_info)  # 类别数，包括背景
+        self.class_ids = np.arange(self.num_classes)  # 类别id
+        self.class_names = [clean_name(c["name"]) for c in self.class_info]  # 类的名字
+        self.num_images = len(self.image_info)  # 图片张数
+        self._image_ids = np.arange(self.num_images)  # 图片的id，从0到张数
+
+        # 生成一个很多表项的字典，从数据集内在的id映射到class定义的类
+        self.class_from_source_map = {"{}.{}".format(info['source'], info['id']): id
+                                      for info, id in zip(self.class_info, self.class_ids)}
+        self.image_from_source_map = {"{}.{}".format(info['source'], info['id']): id
+                                      for info, id in zip(self.image_info, self.image_ids)}
+
+        # 一个字典，键是“coco”，名是一个列表，列表包含了所有的类别id，从1到90
+        self.source_class_ids = {"coco": list(range(self.num_classes))}
+
+
+
+
 
     def load_mask(self, image_id):
         image_info = self.get_imgInfo_byID(image_id)

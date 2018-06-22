@@ -229,8 +229,10 @@ import cv2
 
 
 
-a = tf.constant(0,tf.int32,shape=(3,))
-# b = tf.where(a>10)[:,0]
-# gg = tf.gather(a, b)
-# positive_indices = tf.random_shuffle(b)[:0]
+# a = tf.constant(0,tf.int32,shape=(3,))
+# # b = tf.where(a>10)[:,0]
+# # gg = tf.gather(a, b)
+# # positive_indices = tf.random_shuffle(b)[:0]
+# print(a)
+a = list(range(10))
 print(a)
