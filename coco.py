@@ -12,6 +12,8 @@ from config import input_shape
 import argparse
 import sys
 from tensorflow.python import debug as tf_debug
+import input.cocoData as cocoData
+import imgaug
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 COCO_MODEL_URL = "https://github.com/matterport/Mask_RCNN/releases/download/v2.0/mask_rcnn_coco.h5"
@@ -79,7 +81,11 @@ def main(_):
 
     init = tf.global_variables_initializer()
 
-    next_batch = producer().make_one_shot_iterator().get_next()
+    # next_batch = producer().make_one_shot_iterator().get_next()
+    dataset_train = cocoData.CocoDataset(dataset_dir="cocodata2",subset="val",year="2017")
+    dataset_train.prepare()
+    augmentation = imgaug.augmenters.Fliplr(0.5)
+    data_generator = cocoData.get_batch(num_workers=4,dataset=dataset_train,shuffle=False,augmentation=augmentation)
 
     config2 = tf.ConfigProto(allow_soft_placement=True)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
@@ -113,7 +119,14 @@ def main(_):
         for step in range(config.max_steps):
             # img_name   image,      gt_box,    gt_class,  mask, anchor_labels, anchor_deltas
             # image,gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas
-            image_name,image,  gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas_in = sess.run(next_batch)
+            # image_name,image,  gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas_in = sess.run(next_batch)
+            # data = next(data_generator)
+            image, _, anchor_labels, anchor_deltas_in, gt_class, gt_box, segmentation_mask = next(data_generator)
+
+            # inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
+            #           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
+
+
             try:
                 ml, tl, _, r_loss, p_loss, m_loss = sess.run(
                     [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],

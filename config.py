@@ -26,7 +26,7 @@ moving_average_decay = 0.9
 input_shape = (1024, 1024) # （height，width）
 smallest_anchor_size = 32  # 最底层的feature map所要框住的目标大小,有五层，最高层的则是512
 random_resize = [0.5, 1, 1.5, 2]
-pixel_average = [102.9801, 115.9465, 122.7717]
+pixel_average = [102.9801, 115.9465, 122.7717]  # BGR顺序
 feat_strides = np.array([128, 64, 32, 16, 8])
 resolution = np.array([8, 16, 32, 64, 128])
 positive_ratio = 0.25
@@ -70,6 +70,13 @@ DETECTION_MAX_INSTANCE = 100  # 每一张图片里面，最多检测出的instan
 DETECTION_NMS_THRESHHOLD = 0.3  # 同类别的检测的非极大值抑制阈值
 BACKBONE_STRIDES = []
 CROP_AUGMENTATION = False  # 是否通过裁剪来进行数据增强
+
+IMAGE_MIN_DIM = 800
+IMAGE_MIN_SCALE = 0
+IMAGE_MAX_DIM = 1028
+IMAGE_RESIZE_MODE = "square"
+MAX_GT_INSTANCES = 100
+
 
 if __name__ == '__main__':
     print(os.getcwd())

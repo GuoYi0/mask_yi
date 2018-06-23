@@ -234,5 +234,8 @@ import cv2
 # # gg = tf.gather(a, b)
 # # positive_indices = tf.random_shuffle(b)[:0]
 # print(a)
-a = list(range(10))
-print(a)
+import cv2
+img = cv2.imread("E:\\DLnet\\ctpn\\results\\pic\\T1..cUFbxaXXXXXXXX_!!0-item_pic.jpg.jpg")
+print(img.shape)
+img2 = cv2.resize(img,fx=0.5, fy=0.5)
+print(img2.shape)

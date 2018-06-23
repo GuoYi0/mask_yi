@@ -366,7 +366,7 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     with tf.control_dependencies(asserts):
         boxes2 = tf.identity(boxes2)
 
-    return boxes2, boxes
+    return boxes2
 
 def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size, num_classes, name=None):
     """
@@ -821,7 +821,7 @@ class MASK_RCNN(object):
             self.get_anchors(config.batch_size, resolution, config.input_shape, config.smallest_anchor_size)
 
         # 根据anchor来生成经过非极大值抑制后的proposal, 形状是 [个数，4]
-        proposal,proposl_pri = proposalLayer(inputs=[rpn_binary_probs, rpn_bbox_pred, self.anchors],
+        proposal = proposalLayer(inputs=[rpn_binary_probs, rpn_bbox_pred, self.anchors],
                                  max_proposal=num_proposal,nms_thresh=config.RPN_NMS_THRESHOLD, name="ROI")
 
         if mode == 'inference':

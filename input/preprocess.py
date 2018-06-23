@@ -251,6 +251,106 @@ def cls_target(img_shape, bboxes, gt_class_ids):
     return rpn_labels, anchor_deltas
 
 
+def cls_target2(img_shape, all_anchors, bboxes, gt_class_ids):
+    """
+
+    :param img_shape:
+    :param bboxes:
+    :param gt_class_ids:
+    :return:
+    """
+    # 返回值是[批数，anchor数，(x1, y1, x2, y2)]，相对输入图片的像素坐标
+    # anchors = generate_pyramid_anchors(batch_size, resolution, input_shape, smallest_anchor_size)
+    # all_anchors = anchors[0]  # 只需要取第一批, [num, (x1, y1, x2, y2)]
+
+    # 在图片里面
+    inside = (
+            (all_anchors[:, 0] >= -allowed_border) &
+            (all_anchors[:, 1] >= -allowed_border) &
+            (all_anchors[:, 2] < img_shape[1] + allowed_border) &
+            (all_anchors[:, 3] < img_shape[0] + allowed_border)
+    )
+
+    num_anchors = all_anchors.shape[0]
+
+    rpn_labels = np.empty(shape=(num_anchors,), dtype=np.int32)
+    rpn_labels.fill(-1)
+    anchor_deltas = np.empty(shape=(num_anchors, 4), dtype=np.float32)
+
+    # 有的bounding box可能框住了多个实例，标签就是-1
+    crowd_ix = np.where(gt_class_ids < 0)[0]
+    if crowd_ix.shape[0] > 0:
+        non_crowd_ix = np.where(gt_class_ids > 0)[0]
+        crowd_boxes = bboxes[crowd_ix]
+
+        gt_boxes = bboxes[non_crowd_ix]
+        # 计算anchor与crowd的iou,如果与crowd的iou过大，那这个anchor不进行训练
+        crowd_overlaps = bbox_overlaps(np.ascontiguousarray(all_anchors, dtype=np.float),
+                                       np.ascontiguousarray(crowd_boxes, dtype=np.float))
+        crowd_iou_max = np.amax(crowd_overlaps, axis=1) # 长度是所有anchor的个数
+        no_crowd_bool = (crowd_iou_max < 0.001)
+    else:
+        no_crowd_bool = np.ones(shape=(num_anchors,), dtype=bool)
+        gt_boxes = bboxes
+
+    if gt_boxes.shape[0] > 0:
+        overlaps = bbox_overlaps(
+            np.ascontiguousarray(all_anchors, dtype=np.float),
+            np.ascontiguousarray(gt_boxes, dtype=np.float))
+
+        argmax_overlaps = overlaps.argmax(axis=1)  # 长度为num_anchors
+
+
+        max_overlaps = overlaps[np.arange(num_anchors,), argmax_overlaps]
+
+        # 将iou小于0.3并且没有与crowd相交的，设置为0，表示负例
+        rpn_labels[(max_overlaps < neg_anchor_thresh) & no_crowd_bool & inside] = 0
+
+        rpn_labels[(max_overlaps>=posi_anchor_thresh) & inside] = 1
+
+        # 对于某个GT而言，即使所有anchor与他的iou都小于0.3，也需要把与之iou最大的那个设置为正例
+        gt_iou_argmax = np.argmax(overlaps, axis=0)
+        rpn_labels[gt_iou_argmax] = 1
+
+
+        pos_ids = np.where(rpn_labels == 1)[0]
+
+        # 不能让正例超过一半
+        extra = len(pos_ids) - RPN_TRAIN_ANCHORS_PER_IMAGE//2
+        if extra > 0:
+            rpn_labels[np.random.choice(pos_ids, extra, replace=False)] = -1
+            pos_ids = np.where(rpn_labels == 1)[0]
+        pos_anchor = all_anchors[pos_ids]
+        for i, a in zip(pos_ids, pos_anchor):
+            gt = gt_boxes[argmax_overlaps[i]]
+            gt_h = gt[3] - gt[1]
+            gt_w = gt[2] - gt[0]
+            gt_ctr_x = gt[0] + 0.5 * gt_w
+            gt_ctr_y = gt[1] + 0.5 * gt_h
+
+            an_h = a[3] - a[1]
+            an_w = a[2] - a[0]
+            an_ctr_x = a[0] + 0.5 * an_w
+            an_ctr_y = a[1] + 0.5 * an_h
+
+            anchor_deltas[i] = [(gt_ctr_x-an_ctr_x)/an_w, (gt_ctr_y-an_ctr_y)/an_h,
+                           np.log(gt_h/an_h), np.log(gt_w/an_w)]
+            anchor_deltas[i] /= RPN_BBOX_STD_DEV
+
+        neg_ids = np.where(rpn_labels == 0)[0]
+        extra = len(neg_ids) - (RPN_TRAIN_ANCHORS_PER_IMAGE - len(pos_ids))
+        if extra > 0:
+            rpn_labels[np.random.choice(neg_ids, extra, replace=False)] = -1
+            # neg_ids = np.where(rpn_labels == 0)[0]
+    else:
+        rpn_labels[np.random.choice(num_anchors, RPN_TRAIN_ANCHORS_PER_IMAGE,replace=False)] = 0
+
+    return rpn_labels, anchor_deltas
+
+
+
+
+
 def mask_target(img_shape, segmentations, bbox):
     """
     :param img_shape: 图片高宽
