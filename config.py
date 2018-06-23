@@ -6,7 +6,7 @@ import os
 
 # common
 dataDir = '.'
-train_type = 'val2017'
+train_type = 'train2017'
 trainImage_path = '{}/cocodata2/images'.format(dataDir)
 train_annFile = '{}/cocodata2/annotations/instances_{}.json'.format(dataDir,train_type)
 checkpoint_path = 'checkpoints'
@@ -76,7 +76,9 @@ IMAGE_MIN_SCALE = 0
 IMAGE_MAX_DIM = 1028
 IMAGE_RESIZE_MODE = "square"
 MAX_GT_INSTANCES = 100
-
+dataset_dir = os.path.join(dataDir, "cocodata2")
+subset = "train"
+year = "2017"
 
 if __name__ == '__main__':
     print(os.getcwd())

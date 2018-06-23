@@ -82,11 +82,13 @@ def main(_):
     init = tf.global_variables_initializer()
 
     # next_batch = producer().make_one_shot_iterator().get_next()
-    dataset_train = cocoData.CocoDataset(dataset_dir="cocodata2",subset="val",year="2017")
+    dataset_train = cocoData.CocoDataset(dataset_dir=config.dataset_dir,subset=config.subset,year=config.year)
     dataset_train.prepare()
     augmentation = imgaug.augmenters.Fliplr(0.5)
     data_generator = cocoData.get_batch(num_workers=4,dataset=dataset_train,shuffle=False,augmentation=augmentation)
-
+    if data_generator is None:
+        print("cannot get dataset")
+        exit(0)
     config2 = tf.ConfigProto(allow_soft_placement=True)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
     config2.gpu_options.allow_growth = True

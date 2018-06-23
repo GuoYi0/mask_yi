@@ -390,8 +390,6 @@ def fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_shape, pool_size,
 
     # 这里其实就是全连接,并且批数由num_boxes代替了
     x = conv2d(inputs=x,out_channal=1024, kernel_size=pool_size[0],strides=pool_size[0], use_bias=True, name=name+"_class_conv1")
-    print("===================",x)
-
     # asserts = tf.Assert(tf.shape(x)[1] == 1, ["the shape of x is ",tf.shape(x)])
     # with tf.control_dependencies([asserts]):
     #     x = tf.identity(x)

@@ -14,8 +14,14 @@ from visualize import apply_box_mask
 from config import input_shape
 import config
 import shutil
-coco = COCO(train_annFile)
 
+
+
+
+
+
+
+# coco = COCO(train_annFile)
 def producer():
     # iscrowd: 0 segmentation is polygon
     # iscrowd: 1 segmentation is RLE

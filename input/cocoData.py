@@ -22,8 +22,6 @@ except ImportError:
     import Queue as queue
 
 
-
-
 class CocoDataset(object):
     def __init__(self, dataset_dir, subset, year,class_ids=None,return_coco=False, auto_download=False):
         self.num_classes = 0  # 类别数，包括背景
@@ -83,7 +81,7 @@ class CocoDataset(object):
         """
         assert subset in ("train", "val"), "subset must be either 'train' or 'val' !"
 
-        image_dir = "{}/{}{}".format(dataset_dir, subset, year)
+        image_dir = config.trainImage_path
 
         if not class_ids:
             # 获取全部的类别，train2017的类别标注是从1到90
@@ -143,7 +141,7 @@ class CocoDataset(object):
         # BGR
         image = cv2.imread(self.image_info[image_id]["path"])
         if image is None:
-            print("reading image failed")
+            print("reading image in path {} failed".format(self.image_info[image_id]["path"]))
             exit(0)
         if image.ndim != 3:
             image = cv2.cvtColor(image,cv2.COLOR_GRAY2BGR)
@@ -583,12 +581,12 @@ def resize_mask(mask, scale, padding, crop=None):
     ensure both, the image and the mask, are resized consistently.
 
     scale: mask scaling factor
-    padding: Padding to add to the mask in the form
+    padding: Padding to add to the mask in the formgit
             [(top, bottom), (left, right), (0, 0)]
     """
     mask = mask.astype(np.float32)
     h, w = mask[:2]
-    mask = cv2.resize(mask,(round(w * scale), round(h * scale)))
+    mask = cv2.resize(mask,(np.round(w * scale).astype(np.int32), np.round(h * scale).astype(np.int32)))
     if crop is not None:
         x, y, w, h = crop
         mask = mask[y:y + h, x:x + w]
