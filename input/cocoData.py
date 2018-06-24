@@ -287,14 +287,13 @@ def load_image_gt(dataset, image_id, augmentation=None,use_mini_mask=False):
     image = dataset.load_image(image_id)
     mask, class_ids = dataset.load_mask(image_id)
     original_shape = image.shape
-    print("+++++++++++++", image.shape)
     image, window, scale, padding, crop = resize_image(
         image,
         min_dim=config.IMAGE_MIN_DIM,
         min_scale=config.IMAGE_MIN_SCALE,
         max_dim=config.IMAGE_MAX_DIM,
         mode=config.IMAGE_RESIZE_MODE)
-    print("22222222222222222", image.shape)
+
     mask = resize_mask(mask, scale, padding, crop)
 
     # Augmentation
@@ -321,7 +320,6 @@ def load_image_gt(dataset, image_id, augmentation=None,use_mini_mask=False):
         # Make augmenters deterministic to apply similarly to images and masks
         det = augmentation.to_deterministic()
         image = det.augment_image(image)
-        print("================",image.shape)
         # Change mask to np.uint8 because imgaug doesn't support np.bool
         mask = det.augment_image(mask.astype(np.uint8),
                                  hooks=imgaug.HooksImages(activator=hook))

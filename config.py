@@ -73,7 +73,7 @@ CROP_AUGMENTATION = False  # 是否通过裁剪来进行数据增强
 
 IMAGE_MIN_DIM = 800
 IMAGE_MIN_SCALE = 0
-IMAGE_MAX_DIM = 1028
+IMAGE_MAX_DIM = 1024
 IMAGE_RESIZE_MODE = "square"
 MAX_GT_INSTANCES = 100
 dataset_dir = os.path.join(dataDir, "cocodata2")
