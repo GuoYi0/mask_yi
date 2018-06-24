@@ -522,13 +522,13 @@ def data_generator(dataset, random_rois=0,shuffle=True, augmentation=None):
                 gt_masks = gt_masks[:, :, ids]
 
             # Add to batch
-            batch_image_meta = image_meta[np.newaxis,]
-            batch_rpn_match = rpn_match[:, np.newaxis][np.newaxis,]
-            batch_rpn_bbox = rpn_bbox[np.newaxis,]
-            batch_images = mold_image(image.astype(np.float32))[np.newaxis,]
-            batch_gt_class_ids = gt_class_ids[np.newaxis,]
-            batch_gt_boxes = gt_boxes[np.newaxis,]
-            batch_gt_masks = gt_masks[np.newaxis,]
+            batch_image_meta = image_meta[np.newaxis,:]
+            batch_rpn_match = rpn_match[np.newaxis,:]
+            batch_rpn_bbox = rpn_bbox[np.newaxis,:]
+            batch_images = mold_image(image.astype(np.float32))[np.newaxis,:]
+            batch_gt_class_ids = gt_class_ids[np.newaxis,:]
+            batch_gt_boxes = gt_boxes[np.newaxis,:]
+            batch_gt_masks = gt_masks[np.newaxis,:]
             # if random_rois:
             #     batch_rpn_rois[b] = rpn_rois
             #     if detection_targets:
