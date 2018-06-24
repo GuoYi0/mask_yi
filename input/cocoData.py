@@ -287,12 +287,14 @@ def load_image_gt(dataset, image_id, augmentation=None,use_mini_mask=False):
     image = dataset.load_image(image_id)
     mask, class_ids = dataset.load_mask(image_id)
     original_shape = image.shape
+    print("+++++++++++++", image.shape)
     image, window, scale, padding, crop = resize_image(
         image,
         min_dim=config.IMAGE_MIN_DIM,
         min_scale=config.IMAGE_MIN_SCALE,
         max_dim=config.IMAGE_MAX_DIM,
         mode=config.IMAGE_RESIZE_MODE)
+    print("22222222222222222", image.shape)
     mask = resize_mask(mask, scale, padding, crop)
 
     # Augmentation
@@ -314,10 +316,12 @@ def load_image_gt(dataset, image_id, augmentation=None,use_mini_mask=False):
         # Store shapes before augmentation to compare
         image_shape = image.shape
         mask_shape = mask.shape
-        assert image_shape == mask_shape, "the shape of mask and image must be same"
+        assert image_shape[0] == mask_shape[0] and image_shape[1] == mask_shape[1],\
+            "the shape of mask {} and image {} must be same ".format(mask_shape,image_shape)
         # Make augmenters deterministic to apply similarly to images and masks
         det = augmentation.to_deterministic()
         image = det.augment_image(image)
+        print("================",image.shape)
         # Change mask to np.uint8 because imgaug doesn't support np.bool
         mask = det.augment_image(mask.astype(np.uint8),
                                  hooks=imgaug.HooksImages(activator=hook))
@@ -389,10 +393,10 @@ def minimize_mask(bbox, mask, mini_shape):
 
     See inspect_data.ipynb notebook for more details.
     """
-    mini_mask = np.zeros(mini_shape + (mask.shape[-1],), dtype=bool)
+    mini_mask = np.zeros(mini_shape + (mask.shape[-1],), dtype=np.bool)
     for i in range(mask.shape[-1]):
         # Pick slice and cast to bool in case load_mask() returned wrong dtype
-        m = mask[:, :, i].astype(bool)
+        m = mask[:, :, i].astype(np.float32)
         x1, y1, x2, y2 = bbox[i][:4]
         m = m[y1:y2, x1:x2]
         if m.size == 0:
@@ -482,22 +486,22 @@ def data_generator(dataset, random_rois=0,shuffle=True, augmentation=None):
             #                 rpn_rois, gt_class_ids, gt_boxes, gt_masks, config)
 
             # Init batch arrays
-            if b == 0:
-                batch_image_meta = np.zeros(
-                    (batch_size,) + image_meta.shape, dtype=image_meta.dtype)
-                batch_rpn_match = np.zeros(
-                    [batch_size, anchors.shape[0], 1], dtype=rpn_match.dtype)
-                batch_rpn_bbox = np.zeros(
-                    [batch_size, config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4], dtype=rpn_bbox.dtype)
-                batch_images = np.zeros(
-                    (batch_size,) + image.shape, dtype=np.float32)
-                batch_gt_class_ids = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES), dtype=np.int32)
-                batch_gt_boxes = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
-                batch_gt_masks = np.zeros(
-                    (batch_size, gt_masks.shape[0], gt_masks.shape[1],
-                     config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
+            # if b == 0:
+            #     batch_image_meta = np.zeros(
+            #         (batch_size,) + image_meta.shape, dtype=image_meta.dtype)
+            #     batch_rpn_match = np.zeros(
+            #         [batch_size, anchors.shape[0], 1], dtype=rpn_match.dtype)
+            #     batch_rpn_bbox = np.zeros(
+            #         [batch_size, config.RPN_TRAIN_ANCHORS_PER_IMAGE, 4], dtype=rpn_bbox.dtype)
+            #     batch_images = np.zeros(
+            #         (batch_size,) + image.shape, dtype=np.float32)
+            #     batch_gt_class_ids = np.zeros(
+            #         (batch_size, config.MAX_GT_INSTANCES), dtype=np.int32)
+            #     batch_gt_boxes = np.zeros(
+            #         (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
+            #     batch_gt_masks = np.zeros(
+            #         (batch_size, gt_masks.shape[0], gt_masks.shape[1],
+            #          config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
                 # if random_rois:
                 #     batch_rpn_rois = np.zeros(
                 #         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)
@@ -520,13 +524,13 @@ def data_generator(dataset, random_rois=0,shuffle=True, augmentation=None):
                 gt_masks = gt_masks[:, :, ids]
 
             # Add to batch
-            batch_image_meta[b] = image_meta
-            batch_rpn_match[b] = rpn_match[:, np.newaxis]
-            batch_rpn_bbox[b] = rpn_bbox
-            batch_images[b] = mold_image(image.astype(np.float32))
-            batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
-            batch_gt_boxes[b, :gt_boxes.shape[0]] = gt_boxes
-            batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
+            batch_image_meta = image_meta[np.newaxis,]
+            batch_rpn_match = rpn_match[:, np.newaxis][np.newaxis,]
+            batch_rpn_bbox = rpn_bbox[np.newaxis,]
+            batch_images = mold_image(image.astype(np.float32))[np.newaxis,]
+            batch_gt_class_ids = gt_class_ids[np.newaxis,]
+            batch_gt_boxes = gt_boxes[np.newaxis,]
+            batch_gt_masks = gt_masks[np.newaxis,]
             # if random_rois:
             #     batch_rpn_rois[b] = rpn_rois
             #     if detection_targets:
@@ -534,13 +538,13 @@ def data_generator(dataset, random_rois=0,shuffle=True, augmentation=None):
             #         batch_mrcnn_class_ids[b] = mrcnn_class_ids
             #         batch_mrcnn_bbox[b] = mrcnn_bbox
             #         batch_mrcnn_mask[b] = mrcnn_mask
-            b += 1
+            # b += 1
 
             # Batch full?
-            if b >= batch_size:
-                inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
-                          batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
-                outputs = []
+            # if b >= batch_size:
+            inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
+                      batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
+            # outputs = []
 
                 # if random_rois:
                 #     inputs.extend([batch_rpn_rois])
@@ -552,16 +556,16 @@ def data_generator(dataset, random_rois=0,shuffle=True, augmentation=None):
                 #         outputs.extend(
                 #             [batch_mrcnn_class_ids, batch_mrcnn_bbox, batch_mrcnn_mask])
 
-                yield inputs, outputs
+            yield inputs
 
                 # start a new batch
-                b = 0
+                # b = 0
         except (GeneratorExit, KeyboardInterrupt):
             raise
         except:
             # Log it and skip the image
-            logging.exception("Error processing image {}".format(
-                dataset.image_info[image_id]))
+            # logging.exception("Error processing image {}".format(
+            #     dataset.image_info[image_id]))
             error_count += 1
             if error_count > 5:
                 raise
@@ -585,14 +589,14 @@ def resize_mask(mask, scale, padding, crop=None):
             [(top, bottom), (left, right), (0, 0)]
     """
     mask = mask.astype(np.float32)
-    h, w = mask[:2]
+    h, w = mask.shape[:2]
     mask = cv2.resize(mask,(np.round(w * scale).astype(np.int32), np.round(h * scale).astype(np.int32)))
     if crop is not None:
         x, y, w, h = crop
         mask = mask[y:y + h, x:x + w]
     else:
         mask = np.pad(mask, padding, mode='constant', constant_values=0)
-    mask = round(mask)
+    mask = np.round(mask)
     mask = mask.astype(np.bool)
     return mask
 

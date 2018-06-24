@@ -129,17 +129,17 @@ def main(_):
             #           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
 
 
-            try:
-                ml, tl, _, r_loss, p_loss, m_loss = sess.run(
-                    [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
-                                     feed_dict={input_images: image,
-                                                gt_boxes: gt_box,
-                                                class_ids: gt_class,
-                                                input_gt_mask: segmentation_mask,
-                                                rpn_binary_gt: anchor_labels,
-                                                anchor_deltas: anchor_deltas_in})
-            except ValueError:
-                print("maybe no gt in this step")
+            # try:
+            ml, tl, _, r_loss, p_loss, m_loss = sess.run(
+                [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
+                                 feed_dict={input_images: image,
+                                            gt_boxes: gt_box,
+                                            class_ids: gt_class,
+                                            input_gt_mask: segmentation_mask,
+                                            rpn_binary_gt: anchor_labels,
+                                            anchor_deltas: anchor_deltas_in})
+            # except ValueError:
+            #     print("maybe no gt in this step")
 
             if np.isnan(tl):
                 print('Loss diverged, stop training')
