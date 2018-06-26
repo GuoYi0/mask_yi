@@ -86,9 +86,9 @@ def main(_):
     dataset_train.prepare()
     augmentation = imgaug.augmenters.Fliplr(0.5)
     data_generator = cocoData.get_batch(num_workers=4,dataset=dataset_train,shuffle=False,augmentation=augmentation)
-    if data_generator is None:
-        print("cannot get dataset")
-        exit(0)
+
+
+
     config2 = tf.ConfigProto(allow_soft_placement=True)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
     config2.gpu_options.allow_growth = True
@@ -118,11 +118,11 @@ def main(_):
             sess = tf_debug.TensorBoardDebugWrapperSession(sess, FLAGS.tensorboard_debug_address)
 
         start = time.time()
+        avg_ml = 0.0
+        avg_tl = 0.0
         for step in range(config.max_steps):
-            # img_name   image,      gt_box,    gt_class,  mask, anchor_labels, anchor_deltas
-            # image,gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas
+
             # image_name,image,  gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas_in = sess.run(next_batch)
-            # data = next(data_generator)
             image, _, anchor_labels, anchor_deltas_in, gt_class, gt_box, segmentation_mask = next(data_generator)
 
             # inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
@@ -132,24 +132,29 @@ def main(_):
             # try:
             ml, tl, _, r_loss, p_loss, m_loss = sess.run(
                 [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
-                                 feed_dict={input_images: image,
-                                            gt_boxes: gt_box,
-                                            class_ids: gt_class,
-                                            input_gt_mask: segmentation_mask,
-                                            rpn_binary_gt: anchor_labels,
-                                            anchor_deltas: anchor_deltas_in})
+                feed_dict={input_images: image,
+                           gt_boxes: gt_box,
+                           class_ids: gt_class,
+                           input_gt_mask: segmentation_mask,
+                           rpn_binary_gt: anchor_labels,
+                           anchor_deltas: anchor_deltas_in})
             # except ValueError:
             #     print("maybe no gt in this step")
 
             if np.isnan(tl):
                 print('Loss diverged, stop training')
                 break
+            else:
+                avg_ml += ml
+                avg_tl += tl
 
             if step % 10 == 0:
                 avg_time_per_step = (time.time() - start) / 10
                 start = time.time()
-                print('Step {}, model loss {:.4f}, total loss {:.4f}, {:.2f} seconds/step'.format(step, ml, tl,
-                                                                                                      avg_time_per_step))
+                print('Step {}, model loss {:.4f}, total loss {:.4f}, {:.2f} seconds/step'.
+                      format(step, avg_ml/10, avg_tl/10, avg_time_per_step))
+                avg_ml = 0.0
+                avg_tl = 0.0
 
             if step % config.save_checkpoint_steps == 0:
                 filename = os.path.join(config.checkpoint_path, "model.ckpt")
