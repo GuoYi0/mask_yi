@@ -358,13 +358,16 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     height = boxes[:,3] - boxes[:, 1]
     index = tf.where(tf.logical_and((width > 0.0000001), (height > 0.0000001)))[:,0]
     boxes2 = tf.gather(boxes, index)
-    scores = tf.gather(scores, index)
-    # 这里的boxes有可能是空
-    boxes2 = nms(boxes2, scores, max_proposal, nms_thresh)  # [个数，4]
 
     asserts = [tf.Assert(tf.greater(tf.shape(boxes2)[0], 0), [tf.shape(boxes2), tf.shape(boxes)])]
     with tf.control_dependencies(asserts):
         boxes2 = tf.identity(boxes2)
+
+    scores = tf.gather(scores, index)
+    # 这里的boxes有可能是空
+    boxes2 = nms(boxes2, scores, max_proposal, nms_thresh)  # [个数，4]
+
+
 
     return boxes2
 
@@ -524,16 +527,16 @@ def rpn_binary_loss_graph(rpn_binary_gt, rpn_binary_logits):
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=rpn_binary_gt, logits=rpn_binary_logits)
     return tf.where(tf.size(ix)>0,tf.reduce_mean(loss),tf.constant(0.0))
 
+
 def rpn_bbox_loss_graph(rpn_bbox_gt, rpn_bbox_pred, rpn_binary_gt):
     """
-
     :param rpn_bbox_gt: [批数, anchor个数, (dx, dy, log(h), log(w))]
     :param rpn_bbox_pred:  [批数，anchors数，4]
     :param rpn_binary_gt: [批数, 个数, 1]， 1表示正例，0表示负例，-1则不予考虑，我们只考察正例的回归损失
     :return:
     """
     rpn_binary_gt = tf.cast(tf.reshape(rpn_binary_gt,shape=[-1]), tf.int32)
-    rpn_bbox_gt = tf.reshape(rpn_bbox_gt, [-1, 4])
+    rpn_bbox_gt = tf.reshape(rpn_bbox_gt, [-1, 4],name="guoyi_")
     rpn_bbox_pred = tf.reshape(rpn_bbox_pred, [-1, 4])
 
     with tf.control_dependencies([tf.Assert(

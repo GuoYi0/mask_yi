@@ -275,7 +275,7 @@ def cls_target2(img_shape, all_anchors, bboxes, gt_class_ids):
 
     rpn_labels = np.empty(shape=(num_anchors,), dtype=np.int32)
     rpn_labels.fill(-1)
-    anchor_deltas = np.empty(shape=(num_anchors, 4), dtype=np.float32)
+    anchor_deltas = np.zeros(shape=(num_anchors, 4), dtype=np.float32)
 
     # 有的bounding box可能框住了多个实例，标签就是-1
     crowd_ix = np.where(gt_class_ids < 0)[0]
@@ -287,7 +287,7 @@ def cls_target2(img_shape, all_anchors, bboxes, gt_class_ids):
         # 计算anchor与crowd的iou,如果与crowd的iou过大，那这个anchor不进行训练
         crowd_overlaps = bbox_overlaps(np.ascontiguousarray(all_anchors, dtype=np.float),
                                        np.ascontiguousarray(crowd_boxes, dtype=np.float))
-        crowd_iou_max = np.amax(crowd_overlaps, axis=1) # 长度是所有anchor的个数
+        crowd_iou_max = np.amax(crowd_overlaps, axis=1)  # 长度是所有anchor的个数
         no_crowd_bool = (crowd_iou_max < 0.001)
     else:
         no_crowd_bool = np.ones(shape=(num_anchors,), dtype=bool)
@@ -300,18 +300,16 @@ def cls_target2(img_shape, all_anchors, bboxes, gt_class_ids):
 
         argmax_overlaps = overlaps.argmax(axis=1)  # 长度为num_anchors
 
-
-        max_overlaps = overlaps[np.arange(num_anchors,), argmax_overlaps]
+        max_overlaps = overlaps[np.arange(num_anchors), argmax_overlaps]
 
         # 将iou小于0.3并且没有与crowd相交的，设置为0，表示负例
         rpn_labels[(max_overlaps < neg_anchor_thresh) & no_crowd_bool & inside] = 0
 
-        rpn_labels[(max_overlaps>=posi_anchor_thresh) & inside] = 1
+        rpn_labels[(max_overlaps >= posi_anchor_thresh) & inside] = 1
 
         # 对于某个GT而言，即使所有anchor与他的iou都小于0.3，也需要把与之iou最大的那个设置为正例
         gt_iou_argmax = np.argmax(overlaps, axis=0)
         rpn_labels[gt_iou_argmax] = 1
-
 
         pos_ids = np.where(rpn_labels == 1)[0]
 
@@ -332,10 +330,19 @@ def cls_target2(img_shape, all_anchors, bboxes, gt_class_ids):
             an_w = a[2] - a[0]
             an_ctr_x = a[0] + 0.5 * an_w
             an_ctr_y = a[1] + 0.5 * an_h
-
+            if gt_h <= 0.00001 or an_h <= 0.00001 or gt_w <= 0.00001 or an_w <= 0.00001 :
+                print(gt_h, an_h, gt_w,an_w,"invalid anchor or gt")
+                exit(0)
             anchor_deltas[i] = [(gt_ctr_x-an_ctr_x)/an_w, (gt_ctr_y-an_ctr_y)/an_h,
                            np.log(gt_h/an_h), np.log(gt_w/an_w)]
             anchor_deltas[i] /= RPN_BBOX_STD_DEV
+
+            nan_count = np.isnan(anchor_deltas[i]).sum()
+            if nan_count > 0:
+                print("++++++++++++++++++++++")
+                print(anchor_deltas)
+                print("-----------------------")
+                exit(0)
 
         neg_ids = np.where(rpn_labels == 0)[0]
         extra = len(neg_ids) - (RPN_TRAIN_ANCHORS_PER_IMAGE - len(pos_ids))

@@ -34,7 +34,7 @@ posi_anchor_thresh = 0.7  # anchor 大于为正值
 neg_anchor_thresh = 0.3  # anchor 小于为负值
 batch_anchor_num = 128  # 每轮正值和负值总数
 batch_size = 1
-anchor_ratios = (0.5,1.0, 2.0)
+anchor_ratios = (0.5, 1.0, 2.0)
 anchor_scales = [64, 128, 256]
 anchor_per_location = 3
 allowed_border = 4  # 只有在图片里面的anchor才进行训练，但由于图片可能有填充， 允许超出边界的像素个数
@@ -52,7 +52,7 @@ IMAGE_SHAPE = input_shape + (3,)  # 输入的图片的裁剪大小,通道是3
 
 # 喂给网络的roi个数，原文里面是512，并保证正负样本比例1:3。但是有时候没有足够的正样本数来保证，故暂且取200
 # 可以把proposal的nms的阈值调高，使得这个数可以适当调高
-TRAIN_ROIS_PER_IMAGE = 2000
+TRAIN_ROIS_PER_IMAGE = 300
 
 # 每张图片训练多少个anchors
 RPN_TRAIN_ANCHORS_PER_IMAGE = 256
