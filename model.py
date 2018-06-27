@@ -49,11 +49,15 @@ def apply_box_deltas(boxes, delta):
     center_x = (boxes[:, 0] + boxes[:, 2]) / 2
     center_y = (boxes[:, 3] + boxes[:, 1]) / 2
 
+    # here clip to prevent overflow
+    delta = tf.clip_by_value(delta, -10.0, 10.0)
+
     # 修正后的中心点xy坐标
     pred_x = delta[:, 0] * width + center_x
     pred_y = delta[:, 1] * height + center_y
 
-    # 修正后的高度和宽度
+    # 修正后的高度和宽度,
+
     pred_width = tf.exp(delta[:, 3]) * width
     pred_height = tf.exp(delta[:, 2]) * height
 
