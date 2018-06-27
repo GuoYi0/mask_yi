@@ -353,8 +353,26 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
 
 
 
+    width = pre_nms_anchors[:,2] - pre_nms_anchors[:,0]
+    height = pre_nms_anchors[:,3] - pre_nms_anchors[:, 1]
+    logical = tf.reduce_all(tf.logical_and((width > 0.0000001), (height > 0.0000001)))
+    asserts = [tf.Assert(logical, [tf.shape(pre_nms_anchors)])]
+    with tf.control_dependencies(asserts):
+        pre_nms_anchors = tf.identity(pre_nms_anchors)
+
+
+
+
     # 修正坐标，修正以后，可能会出现x2<x1的情况
     boxes = apply_box_deltas(pre_nms_anchors, deltas)
+
+    width = boxes[:,2] - boxes[:,0]
+    height = boxes[:,3] - boxes[:, 1]
+    logical = tf.reduce_all(tf.logical_and((width > 0.0000001), (height > 0.0000001)))
+    asserts = [tf.Assert(logical, [tf.shape(pre_nms_anchors),tf.shape(boxes), "=================="])]
+    with tf.control_dependencies(asserts):
+        boxes = tf.identity(boxes)
+
 
     # 我们使用正则化坐标，所有框框的坐标值都在[0, 1]之间
     boxes = tf.clip_by_value(boxes, 0, 1)
@@ -363,7 +381,7 @@ def proposalLayer(inputs, max_proposal,nms_thresh, name=None):
     index = tf.where(tf.logical_and((width > 0.0000001), (height > 0.0000001)))[:,0]
     boxes2 = tf.gather(boxes, index)
 
-    asserts = [tf.Assert(tf.greater(tf.shape(boxes2)[0], 0), [tf.shape(boxes2), tf.shape(boxes)])]
+    asserts = [tf.Assert(tf.greater(tf.shape(boxes2)[0], 0), [tf.shape(boxes2), tf.shape(boxes), tf.shape(index), logical,"++++"])]
     with tf.control_dependencies(asserts):
         boxes2 = tf.identity(boxes2)
 
@@ -743,7 +761,7 @@ class MASK_RCNN(object):
         width = image_shape[1]
         scale = tf.constant([width - 1, height - 1, width - 1, height - 1],dtype=tf.float32)
         shift = tf.constant([0.0, 0.0, 1.0, 1.0])
-        anchors =  tf.divide((anchors - shift), scale)
+        anchors = tf.divide((anchors - shift), scale)
 
         self.anchors = anchors
 

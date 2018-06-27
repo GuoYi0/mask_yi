@@ -100,15 +100,17 @@ def main(_):
             print('continue training from previous checkpoint')
             ckpt = tf.train.latest_checkpoint(config.checkpoint_path)
             saver.restore(sess, ckpt)
-        # elif config.COCO_WEIGHTS_PATH is not None:
-        #     try:
-        #         print("trying to assign pre-trained model...")
-        #         load_trained_weights(weights_path, sess, ignore_missing=True)
-        #         print("assign pre-trained model done!")
-        #     except:
-        #         raise 'loading pre-trained model failed,please check your pretrained ' \
-        #               'model {:s}'.format(config.COCO_WEIGHTS_PATH)
+        elif tf.gfile.Exists(weights_path):
+            sess.run(init)
+            try:
+                print("trying to assign pre-trained model...")
+                load_trained_weights(weights_path, sess, ignore_missing=True)
+                print("assign pre-trained model done!")
+            except:
+                raise 'loading pre-trained model failed,please check your pretrained ' \
+                      'model {:s}'.format(config.COCO_WEIGHTS_PATH)
         else:
+            print("use initial parameters")
             sess.run(init)
         if FLAGS.debug and FLAGS.tensorboard_debug_address:
             raise ValueError("The --debug and --tensorboard_debug_adress flags are mutually exclusive")
@@ -141,17 +143,17 @@ def main(_):
             #           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
 
 
-            # try:
-            ml, tl, _, r_loss, p_loss, m_loss = sess.run(
-                [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
-                feed_dict={input_images: image,
-                           gt_boxes: gt_box,
-                           class_ids: gt_class,
-                           input_gt_mask: segmentation_mask,
-                           rpn_binary_gt: anchor_labels,
-                           anchor_deltas: anchor_deltas_in})
-            # except ValueError:
-            #     print("maybe no gt in this step")
+            try:
+                ml, tl, _, r_loss, p_loss, m_loss = sess.run(
+                    [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
+                    feed_dict={input_images: image,
+                               gt_boxes: gt_box,
+                               class_ids: gt_class,
+                               input_gt_mask: segmentation_mask,
+                               rpn_binary_gt: anchor_labels,
+                               anchor_deltas: anchor_deltas_in})
+            except ValueError:
+                print("maybe no gt in this step")
 
             if np.isnan(tl):
                 print('Loss diverged, stop training')
@@ -188,17 +190,22 @@ def load_trained_weights(file_path, sess, ignore_missing=False):
     if h5py is None:
         raise ImportError('load_weights require h5py')
     data_dict = h5py.File(file_path, mode='r')
+    assign_success = 0
+    assign_failed = 0
     for key in data_dict.keys():
         for subkey in data_dict[key]:
             with tf.variable_scope(subkey, reuse=True):
                 for g in data_dict[key][subkey]:
                     try:
                         var = tf.get_variable(g.split(":")[0])
+                        # print(data_dict[key][subkey][g][...].shape, var.shape)
                         sess.run(var.assign(data_dict[key][subkey][g][...]))
+                        assign_success += 1
                     except ValueError:
-                        print("ignore "+ key)
+                        assign_failed += 1
                         if not ignore_missing: # 有缺失项，但是又不去忽略，就报错
                             raise
+    print("assign {} items successfully, {} failed".format(assign_success, assign_failed))
 
 
 
