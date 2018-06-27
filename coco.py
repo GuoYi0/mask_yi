@@ -59,7 +59,7 @@ def main(_):
     total_loss = model_loss + tf.add_n(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
     # total_loss = model_loss +
     batch_norm_updates_op = tf.group(*tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-    with_clip = False
+    with_clip = True
     if with_clip:
         tvars = tf.trainable_variables()
         grads, norm = tf.clip_by_global_norm(tf.gradients(total_loss, tvars), 10.0)
