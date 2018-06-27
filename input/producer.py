@@ -15,17 +15,87 @@ from config import input_shape
 import config
 import shutil
 
-
-
-
-
-
-
-# coco = COCO(train_annFile)
 def producer():
     # iscrowd: 0 segmentation is polygon
     # iscrowd: 1 segmentation is RLE
+    coco = COCO(train_annFile)
 
+    def sample_handler(imgId=532481):
+        """
+        :return: image，input_shape, 进行裁剪以后的图片，float
+                  gt_box，numpy数组，[N, (x1, y1, x2, y2)] normalized坐标, N表示gt个数，没有对标签进行筛选
+                  segmentation_mask，numpu数组，(N，gao，宽)
+                  anchor_labels numpy数组， [num_anchor] 所有anchor的标签，1表示正例，0表示负例，-1不予训练
+                  anchor_deltas numpy数组。[num_anchor, (dx, dy, log(h), log(w))], 除以了RPN_BBOX_STD_DEV
+        """
+        # 下面这个函数是以列表形式返回的，所以要取[0]
+        img_info = coco.loadImgs(int(imgId))[0]
+        img_name = img_info['file_name']
+        height, width = img_info['height'], img_info['width']
+
+        img_path = os.path.join(trainImage_path, img_name)
+        image = cv2.imread(img_path)
+        # if image is None:
+        #     print("No image to read in path {}".format(img_path))
+        #     raise
+        image = np.array(image, dtype=np.float32)
+        image -= pixel_average  # 去均值
+
+        annIds = coco.getAnnIds(imgIds=imgId)
+        # anns是一个长度为N的列表，代表N个box，每个box是一个字典，
+        # 包括'segmentation','area', 'iscrowd', 'image_id', 'bbox', 'category_id'
+        anns = coco.loadAnns(annIds)
+        # 定义三个列表，其长度是实例个数，
+        # instance_masks，mask，一个高宽就是图片宽高的的bool型mask，binary mask (numpy 2D array)
+        # class_ids是一个int型列表
+        # bboxes的每个元素依然是列表，元素列表包含四个元素，x1, y1, x2, y2
+        segmentations = []
+        class_ids = []
+        bboxes = []
+        for idx, ann in enumerate(anns):
+            # 获取类别ID
+            class_id = ann['category_id']
+            if class_id:  # 不是背景
+                # 根据标注取出mask
+                m = coco.annToMask(ann)
+                if m.max() < 1:
+                    continue
+                if ann["iscrowd"]:
+                    class_id *= -1
+                    if m.shape[0] != height or m.shape[1] != width:
+                        m = np.ones([height, width], dtype=bool)
+
+                bbox = np.array(ann['bbox'])
+                # left top x, left top y, width, height -> xmin, ymin, xmax, ymax
+                bbox_n = [bbox[0],
+                          bbox[1],
+                          bbox[0] + bbox[2],
+                          bbox[1] + bbox[3]]
+                bboxes.append(bbox_n)
+                segmentations.append(m)
+                class_ids.append(class_id)
+
+        raw_size = np.array((height, width), dtype=np.float32)
+
+        bboxes = np.array(bboxes, dtype=np.float32)
+        class_ids = np.array(class_ids, dtype=np.int32)
+        if config.CROP_AUGMENTATION:
+            image, bboxes, class_ids, segmentations = data_augmentation(image, raw_size, bboxes, class_ids,
+                                                                        segmentations)
+
+        image, bboxes, segmentations = resize(image, bboxes, segmentations)
+
+        # 所有anchor的标签，以及回归值
+        anchor_labels, anchor_deltas = cls_target(image.shape, bboxes, class_ids)
+
+        # segmentation_mask = np.round(mask_target(image.shape, segmentations, bboxs)).astype(np.bool)
+
+        segmentations = [np.where(seg > 0.5, 1, 0).astype(np.bool) for seg in segmentations]
+        segmentations = np.array(segmentations, dtype=np.bool)
+
+        gt_box = norm_boxes(bboxes, image.shape)
+
+        return img_name, image, gt_box, class_ids, segmentations, anchor_labels, anchor_deltas
 
 
     # 以列表的形式返回imageID
@@ -46,81 +116,7 @@ def producer():
 
 
 
-def sample_handler(imgId=532481):
-    """
-    :return: image，input_shape, 进行裁剪以后的图片，float
-              gt_box，numpy数组，[N, (x1, y1, x2, y2)] normalized坐标, N表示gt个数，没有对标签进行筛选
-              segmentation_mask，numpu数组，(N，gao，宽)
-              anchor_labels numpy数组， [num_anchor] 所有anchor的标签，1表示正例，0表示负例，-1不予训练
-              anchor_deltas numpy数组。[num_anchor, (dx, dy, log(h), log(w))], 除以了RPN_BBOX_STD_DEV
-    """
-    # 下面这个函数是以列表形式返回的，所以要取[0]
-    img_info = coco.loadImgs(int(imgId))[0]
-    img_name = img_info['file_name']
-    height, width = img_info['height'], img_info['width']
 
-    img_path = os.path.join(trainImage_path, img_name)
-    image = cv2.imread(img_path)
-    # if image is None:
-    #     print("No image to read in path {}".format(img_path))
-    #     raise
-    image = np.array(image, dtype=np.float32)
-    image -= pixel_average  # 去均值
-
-    annIds = coco.getAnnIds(imgIds=imgId)
-    # anns是一个长度为N的列表，代表N个box，每个box是一个字典，
-    # 包括'segmentation','area', 'iscrowd', 'image_id', 'bbox', 'category_id'
-    anns = coco.loadAnns(annIds)
-    # 定义三个列表，其长度是实例个数，
-    # instance_masks，mask，一个高宽就是图片宽高的的bool型mask，binary mask (numpy 2D array)
-    # class_ids是一个int型列表
-    # bboxes的每个元素依然是列表，元素列表包含四个元素，x1, y1, x2, y2
-    segmentations = []
-    class_ids = []
-    bboxes = []
-    for idx, ann in enumerate(anns):
-        # 获取类别ID
-        class_id = ann['category_id']
-        if class_id: # 不是背景
-            # 根据标注取出mask
-            m = coco.annToMask(ann)
-            if m.max() < 1:
-                continue
-            if ann["iscrowd"]:
-                class_id *= -1
-                if m.shape[0] != height or m.shape[1] != width:
-                    m = np.ones([height, width], dtype=bool)
-
-            bbox = np.array(ann['bbox'])
-            # left top x, left top y, width, height -> xmin, ymin, xmax, ymax
-            bbox_n = [bbox[0],
-                      bbox[1],
-                      bbox[0] + bbox[2],
-                      bbox[1] + bbox[3]]
-            bboxes.append(bbox_n)
-            segmentations.append(m)
-            class_ids.append(class_id)
-
-    raw_size = np.array((height, width), dtype=np.float32)
-
-    bboxes = np.array(bboxes,dtype=np.float32)
-    class_ids = np.array(class_ids,dtype=np.int32)
-    if config.CROP_AUGMENTATION:
-        image, bboxes, class_ids, segmentations = data_augmentation(image, raw_size, bboxes, class_ids, segmentations)
-
-    image, bboxes, segmentations = resize(image, bboxes, segmentations)
-
-    # 所有anchor的标签，以及回归值
-    anchor_labels, anchor_deltas = cls_target(image.shape, bboxes, class_ids)
-
-    # segmentation_mask = np.round(mask_target(image.shape, segmentations, bboxs)).astype(np.bool)
-
-    segmentations = [np.where(seg > 0.5, 1, 0).astype(np.bool) for seg in segmentations]
-    segmentations = np.array(segmentations,dtype=np.bool)
-
-    gt_box = norm_boxes(bboxes, image.shape)
-
-    return img_name, image, gt_box, class_ids, segmentations, anchor_labels, anchor_deltas
 
 
 

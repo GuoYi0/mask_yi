@@ -81,11 +81,11 @@ def main(_):
 
     init = tf.global_variables_initializer()
 
-    # next_batch = producer().make_one_shot_iterator().get_next()
-    dataset_train = cocoData.CocoDataset(dataset_dir=config.dataset_dir,subset=config.subset,year=config.year)
-    dataset_train.prepare()
-    augmentation = imgaug.augmenters.Fliplr(0.5)
-    data_generator = cocoData.get_batch(num_workers=4,dataset=dataset_train,shuffle=False,augmentation=augmentation)
+    next_batch = producer().make_one_shot_iterator().get_next()
+    # dataset_train = cocoData.CocoDataset(dataset_dir=config.dataset_dir,subset=config.subset,year=config.year)
+    # dataset_train.prepare()
+    # augmentation = imgaug.augmenters.Fliplr(0.5)
+    # data_generator = cocoData.get_batch(num_workers=4,dataset=dataset_train,shuffle=False,augmentation=augmentation)
 
 
 
@@ -122,24 +122,34 @@ def main(_):
         avg_tl = 0.0
         for step in range(config.max_steps):
 
-            # image_name,image,  gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas_in = sess.run(next_batch)
-            image, _, anchor_labels, anchor_deltas_in, gt_class, gt_box, segmentation_mask = next(data_generator)
+            image_name,image,  gt_box, gt_class, segmentation_mask, anchor_labels, anchor_deltas_in \
+                = sess.run(next_batch)
+
+            # data = next(data_generator)
+            # i = 0
+            # while data is None and i < 5:
+            #     data = next(data_generator)
+            #     i += 1
+            #     print("None type appear for 5 times")
+            #     exit(0)
+            #
+            # image, _, anchor_labels, anchor_deltas_in, gt_class, gt_box, segmentation_mask = data
 
             # inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
             #           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks]
 
 
-            # try:
-            ml, tl, _, r_loss, p_loss, m_loss = sess.run(
-                [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
-                feed_dict={input_images: image,
-                           gt_boxes: gt_box,
-                           class_ids: gt_class,
-                           input_gt_mask: segmentation_mask,
-                           rpn_binary_gt: anchor_labels,
-                           anchor_deltas: anchor_deltas_in})
-            # except ValueError:
-            #     print("maybe no gt in this step")
+            try:
+                ml, tl, _, r_loss, p_loss, m_loss = sess.run(
+                    [model_loss, total_loss, train_op,  rpn_loss, proposal_loss, mask_loss],
+                    feed_dict={input_images: image,
+                               gt_boxes: gt_box,
+                               class_ids: gt_class,
+                               input_gt_mask: segmentation_mask,
+                               rpn_binary_gt: anchor_labels,
+                               anchor_deltas: anchor_deltas_in})
+            except ValueError:
+                print("maybe no gt in this step")
 
             if np.isnan(tl):
                 print('Loss diverged, stop training')

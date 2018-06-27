@@ -178,7 +178,7 @@ def cls_target(img_shape, bboxes, gt_class_ids):
 
     rpn_labels = np.empty(shape=(num_anchors,), dtype=np.int32)
     rpn_labels.fill(-1)
-    anchor_deltas = np.empty(shape=(num_anchors, 4), dtype=np.float32)
+    anchor_deltas = np.zeros(shape=(num_anchors, 4), dtype=np.float32)
 
     # 有的bounding box可能框住了多个实例，标签就是-1
     crowd_ix = np.where(gt_class_ids < 0)[0]
